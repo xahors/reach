@@ -13,18 +13,22 @@ const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolea
   useEffect(() => {
     if (!call) return;
 
+    // The stream might be added later, so we poll or listen for feeds changed
     const stream = isLocal ? call.localUsermediaStream : call.remoteUsermediaStream;
+    
     if (!stream || stream.getAudioTracks().length === 0) {
       Promise.resolve().then(() => setLevel(0));
       return;
     }
 
     try {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const audioCtx = new AudioContextClass();
+      const audioCtx = callManager.getContext();
+      if (!audioCtx) return;
+
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.3;
       source.connect(analyser);
       analyserRef.current = analyser;
 
@@ -32,13 +36,17 @@ const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolea
       const dataArray = new Uint8Array(bufferLength);
 
       const update = () => {
-        analyser.getByteFrequencyData(dataArray);
+        if (!analyserRef.current) return;
+        
+        analyserRef.current.getByteFrequencyData(dataArray);
         let sum = 0;
         for (let i = 0; i < bufferLength; i++) {
           sum += dataArray[i];
         }
         const average = sum / bufferLength;
-        setLevel(Math.min(average / 128, 1));
+        // Boost sensitivity for better visualization
+        const normalized = Math.min((average * 2) / 128, 1);
+        setLevel(normalized);
         requestRef.current = requestAnimationFrame(update);
       };
 
@@ -46,7 +54,8 @@ const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolea
 
       return () => {
         cancelAnimationFrame(requestRef.current);
-        audioCtx.close().catch(() => {});
+        source.disconnect();
+        analyser.disconnect();
       };
     } catch (e) {
       console.warn('Mic indicator failed', e);
@@ -54,10 +63,10 @@ const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolea
   }, [call, isLocal]);
 
   return (
-    <div className="h-1 w-full bg-discord-black rounded-full overflow-hidden mt-1">
+    <div className="h-1.5 w-full bg-discord-black rounded-full overflow-hidden mt-1 flex">
       <div 
         className="h-full bg-green-500 transition-all duration-75" 
-        style={{ width: `${level * 100}%`, opacity: level > 0.1 ? 1 : 0.3 }}
+        style={{ width: `${level * 100}%`, opacity: level > 0.05 ? 1 : 0.2 }}
       />
     </div>
   );
@@ -149,11 +158,11 @@ const ActiveCall: React.FC = () => {
     }
   };
 
-  const toggleCamera = () => {
+  const toggleCamera = async () => {
     if (activeCall) {
       callManager.warmupAudioContext();
       const newCameraOff = !isCameraOff;
-      callManager.setVideoMuted(newCameraOff);
+      await callManager.setVideoMuted(newCameraOff);
       setCameraOff(newCameraOff);
     }
   };
@@ -216,8 +225,8 @@ const ActiveCall: React.FC = () => {
                <span className="text-xs text-discord-text-muted animate-pulse">{!isCameraOff ? 'Video' : 'Voice'}</span>
             </div>
             
-            <div className="mb-4">
-              <div className="text-[10px] text-discord-text-muted mb-1 font-bold uppercase">Local Mic Activity</div>
+            <div className="mb-4 rounded-md bg-discord-black/40 p-2">
+              <div className="text-[10px] text-discord-text-muted mb-1 font-bold uppercase tracking-tight">Microphone Activity</div>
               <MicActivityIndicator call={activeCall} isLocal={true} />
             </div>
 

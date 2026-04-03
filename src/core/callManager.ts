@@ -27,16 +27,22 @@ class CallManager {
 
   // Call this on ANY user interaction to unblock audio beeps
   warmupAudioContext() {
+    this.warmupAndGetContext();
+  }
+
+  private warmupAndGetContext(): AudioContext | null {
     try {
       if (!this.audioContext) {
         const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.audioContext = new AudioContextClass();
       }
       if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume();
+        this.audioContext.resume().catch(console.warn);
       }
+      return this.audioContext;
     } catch (e) {
-      console.warn('Audio warmup failed', e);
+      console.warn('Audio Context error', e);
+      return null;
     }
   }
 
@@ -62,12 +68,12 @@ class CallManager {
   }
 
   private playFeedbackSound(type: 'mute' | 'unmute' | 'connect' | 'place') {
-    this.warmupAudioContext();
-    if (!this.audioContext) return;
+    const context = this.warmupAndGetContext();
+    if (!context) return;
 
     try {
-      const oscillator = this.audioContext.createOscillator();
-      const gain = this.audioContext.createGain();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
 
       oscillator.type = 'sine';
       
@@ -91,7 +97,7 @@ class CallManager {
         duration = 0.15;
       }
 
-      const now = this.audioContext.currentTime;
+      const now = context.currentTime;
       oscillator.frequency.setValueAtTime(startFreq, now);
       oscillator.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
 
@@ -99,7 +105,7 @@ class CallManager {
       gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
       oscillator.connect(gain);
-      gain.connect(this.audioContext.destination);
+      gain.connect(context.destination);
 
       oscillator.start(now);
       oscillator.stop(now + duration);
@@ -160,6 +166,10 @@ class CallManager {
     }
   }
 
+  public getContext(): AudioContext | null {
+    return this.warmupAndGetContext();
+  }
+
   setMuted(muted: boolean) {
     if (this.currentCall) {
       this.currentCall.setMicrophoneMuted(muted);
@@ -167,12 +177,14 @@ class CallManager {
     }
   }
 
-  setVideoMuted(muted: boolean) {
+  async setVideoMuted(muted: boolean) {
     if (this.currentCall) {
-      // In JS SDK, unmuting video when no track exists might not trigger permission.
-      // Explicitly check and use setLocalVideoMuted.
-      this.currentCall.setLocalVideoMuted(muted);
-      this.playFeedbackSound(muted ? 'mute' : 'unmute');
+      try {
+        await this.currentCall.setLocalVideoMuted(muted);
+        this.playFeedbackSound(muted ? 'mute' : 'unmute');
+      } catch (e) {
+        console.error("Failed to toggle video:", e);
+      }
     }
   }
 
