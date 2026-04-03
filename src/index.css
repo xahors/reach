@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --discord-dark: #313338;
+  --discord-sidebar: #2b2d31;
+  --discord-nav: #1e1f22;
+  --discord-hover: #3f4147;
+  --discord-text: #dbdee1;
+  --discord-text-muted: #949ba4;
+  --discord-accent: #5865f2;
+}
+
+@theme {
+  --color-discord-dark: var(--discord-dark);
+  --color-discord-sidebar: var(--discord-sidebar);
+  --color-discord-nav: var(--discord-nav);
+  --color-discord-hover: var(--discord-hover);
+  --color-discord-text: var(--discord-text);
+  --color-discord-text-muted: var(--discord-text-muted);
+  --color-discord-accent: var(--discord-accent);
+}
+
+body {
+  @apply bg-discord-dark text-discord-text antialiased;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#root {
+  height: 100vh;
+}

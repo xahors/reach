@@ -1,0 +1,195 @@
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, PendingEventOrdering, ClientEvent } from 'matrix-js-sdk';
+import { useMatrixClient } from './useMatrixClient';
+
+export const useRoomMessages = (roomId: string | null) => {
+  const client = useMatrixClient();
+  const [messages, setMessages] = useState<MatrixEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [canPaginate, setCanPaginate] = useState(true);
+  const timelineWindow = useRef<TimelineWindow | null>(null);
+  
+  // Keep track of current room to manage listeners
+  const currentRoomRef = useRef<Room | null>(null);
+
+  const getEvents = useCallback(() => {
+    if (!client || !roomId) return [];
+    const room = client.getRoom(roomId);
+    if (!room) return [];
+    
+    let events: MatrixEvent[] = [];
+    
+    // Determine if we are at the live end of the timeline.
+    // We are at the live end if we don't have a window yet, or if the window contains the last event of the live timeline.
+    const liveEvents = room.getLiveTimeline().getEvents();
+    const lastLiveEvent = liveEvents[liveEvents.length - 1];
+    const windowEvents = timelineWindow.current?.getEvents() || [];
+    const lastWindowEvent = windowEvents[windowEvents.length - 1];
+    
+    const isAtLiveEnd = !timelineWindow.current || 
+                        !lastLiveEvent || 
+                        (lastWindowEvent && lastWindowEvent.getId() === lastLiveEvent.getId()) ||
+                        (lastWindowEvent && lastWindowEvent.getTxnId() && lastWindowEvent.getTxnId() === lastLiveEvent.getTxnId());
+
+    if (timelineWindow.current && !isAtLiveEnd) {
+      events = [...timelineWindow.current.getEvents()];
+    } else {
+      events = [...room.getLiveTimeline().getEvents()];
+    }
+
+    // Include local echoes if detached
+    // @ts-expect-error: internal property access
+    if (room.opts?.pendingEventOrdering === PendingEventOrdering.Detached) {
+      const pending = room.getPendingEvents();
+      const eventIds = new Set(events.map(e => e.getId()).filter(Boolean));
+      const txnIds = new Set(events.map(e => e.getTxnId()).filter(Boolean));
+
+      pending.forEach(pe => {
+        if (!eventIds.has(pe.getId()) && !txnIds.has(pe.getTxnId())) {
+          events.push(pe);
+        }
+      });
+    }
+
+    return events;
+  }, [client, roomId]);
+
+  const updateMessages = useCallback(() => {
+    const allEvents = getEvents();
+    const filtered = allEvents.filter((event) => 
+      event.getType() === 'm.room.message' || 
+      event.getType() === 'm.room.encrypted' ||
+      event.getType() === 'm.call.invite' ||
+      event.getType() === 'm.room.member'
+    );
+    
+    filtered.sort((a, b) => a.getTs() - b.getTs());
+    setMessages([...filtered]);
+    
+    if (timelineWindow.current) {
+      setCanPaginate(timelineWindow.current.canPaginate(Direction.Backward));
+    }
+  }, [getEvents]);
+
+  useEffect(() => {
+    if (!client || !roomId) {
+      setMessages([]);
+      currentRoomRef.current = null;
+      return;
+    }
+
+    const room = client.getRoom(roomId);
+    currentRoomRef.current = room;
+
+    const onTimelineEvent = (event: MatrixEvent, evRoom: Room | undefined) => {
+      if (evRoom?.roomId === roomId) {
+        // We still try to advance the window in the background to keep it updated
+        if (timelineWindow.current) {
+          timelineWindow.current.paginate(Direction.Forward, 10).catch(() => {});
+        }
+        
+        // Use a small timeout to ensure SDK has finished processing and live timeline is updated
+        setTimeout(() => updateMessages(), 0);
+      }
+    };
+
+    const onEventDecrypted = (event: MatrixEvent) => {
+      if (event.getRoomId() === roomId) {
+        updateMessages();
+      }
+    };
+
+    const onEventStatus = (event: MatrixEvent) => {
+      if (event.getRoomId() === roomId) {
+        updateMessages();
+      }
+    };
+
+    const onSync = (state: string) => {
+      if (state === 'PREPARED' || state === 'SYNCING') {
+         if (!currentRoomRef.current) {
+           const r = client.getRoom(roomId);
+           if (r) {
+             currentRoomRef.current = r;
+             r.on(RoomEvent.Timeline, onTimelineEvent);
+             r.on(RoomEvent.LocalEchoUpdated, updateMessages);
+             initTimeline(r);
+           }
+         }
+         updateMessages();
+      }
+    };
+
+    const onRoom = (r: Room) => {
+      if (r.roomId === roomId && !currentRoomRef.current) {
+        currentRoomRef.current = r;
+        r.on(RoomEvent.Timeline, onTimelineEvent);
+        r.on(RoomEvent.LocalEchoUpdated, updateMessages);
+        initTimeline(r);
+      }
+    };
+
+    const initTimeline = async (targetRoom: Room) => {
+      setLoading(true);
+      timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
+        windowLimit: 250
+      });
+      try {
+        await timelineWindow.current.load(undefined, 50);
+      } catch (error) {
+        console.error('Failed to load timeline:', error);
+      } finally {
+        updateMessages();
+        setLoading(false);
+      }
+    };
+
+    // Global client listeners
+    client.on(RoomEvent.Timeline, onTimelineEvent);
+    client.on(MatrixEventEvent.Decrypted, onEventDecrypted);
+    // @ts-expect-error: internal event
+    client.on('Event.status', onEventStatus);
+    client.on(ClientEvent.Sync, onSync);
+    client.on(ClientEvent.Room, onRoom); // Retry room lookup when new rooms arrive
+
+    // Room specific listeners
+    if (room) {
+      room.on(RoomEvent.Timeline, onTimelineEvent);
+      room.on(RoomEvent.LocalEchoUpdated, updateMessages);
+      initTimeline(room);
+    } else {
+      updateMessages();
+    }
+
+    return () => {
+      client.removeListener(RoomEvent.Timeline, onTimelineEvent);
+      client.removeListener(MatrixEventEvent.Decrypted, onEventDecrypted);
+      // @ts-expect-error: internal event
+      client.removeListener('Event.status', onEventStatus);
+      client.removeListener(ClientEvent.Sync, onSync);
+      client.removeListener(ClientEvent.Room, onRoom);
+      
+      if (currentRoomRef.current) {
+        currentRoomRef.current.removeListener(RoomEvent.Timeline, onTimelineEvent);
+        currentRoomRef.current.removeListener(RoomEvent.LocalEchoUpdated, updateMessages);
+      }
+      timelineWindow.current = null;
+    };
+  }, [client, roomId, updateMessages]);
+
+  const paginate = useCallback(async () => {
+    if (!timelineWindow.current || !canPaginate || loading) return;
+    
+    setLoading(true);
+    try {
+      await timelineWindow.current.paginate(Direction.Backward, 30);
+      updateMessages();
+    } catch (error) {
+      console.error('Pagination failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [canPaginate, loading, updateMessages]);
+
+  return { messages, loading, paginate, canPaginate };
+};
