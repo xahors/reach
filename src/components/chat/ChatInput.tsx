@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MsgType } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
 import { matrixService } from '../../core/matrix';
 import { PlusCircle, Gift, StickyNote, Smile, ShieldAlert } from 'lucide-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 interface ChatInputProps {
   roomId: string;
@@ -12,15 +13,31 @@ interface ChatInputProps {
 
 const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const [message, setMessage] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const client = useMatrixClient();
   const { setSettingsOpen } = useAppStore();
   const [error, setError] = useState<string | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim() || !client) return;
 
     setError(null);
+    setShowEmojiPicker(false);
     try {
       await client.sendMessage(roomId, {
         msgtype: MsgType.Text,
@@ -39,8 +56,25 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     }
   };
 
+  const onEmojiClick = (emojiData: any) => {
+    setMessage((prev) => prev + emojiData.emoji);
+  };
+
   return (
-    <div className="px-4 pb-6">
+    <div className="px-4 pb-6 relative">
+      {showEmojiPicker && (
+        <div 
+          ref={emojiPickerRef}
+          className="absolute bottom-20 right-4 z-50"
+        >
+          <EmojiPicker 
+            theme={Theme.DARK}
+            onEmojiClick={onEmojiClick}
+            autoFocusSearch={false}
+          />
+        </div>
+      )}
+      
       {error && (
         <div className="mb-2 flex items-center justify-between rounded bg-red-500/10 p-2 text-xs text-red-400">
           <div className="flex items-center">
@@ -81,7 +115,11 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
            <button type="button" className="hover:text-discord-text transition">
              <StickyNote className="h-6 w-6" />
            </button>
-           <button type="button" className="hover:text-discord-text transition">
+           <button 
+             type="button" 
+             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+             className={`transition ${showEmojiPicker ? 'text-discord-accent' : 'hover:text-discord-text'}`}
+           >
              <Smile className="h-6 w-6" />
            </button>
         </div>
