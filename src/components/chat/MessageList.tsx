@@ -81,7 +81,6 @@ const MessageList: React.FC<MessageListProps> = ({
             return () => clearTimeout(timer);
           } else {
             // If marker not in current window, maybe fallback to bottom or stay at top
-            // For now, if we can't find it, we wait a bit or just show what we have
             const timer = setTimeout(() => setIsReady(true), 500);
             return () => clearTimeout(timer);
           }
@@ -104,7 +103,6 @@ const MessageList: React.FC<MessageListProps> = ({
     const isNearBottom = distanceToBottom < 250;
     
     const lastMessage = messages[messages.length - 1];
-    // A message is a local echo if it has a txnId but is still in sending status or hasn't got an ID yet
     const isLocalEcho = lastMessage.getTxnId() && (!lastMessage.getId() || lastMessage.isSending());
 
     if (isNearBottom || isLocalEcho) {
@@ -141,7 +139,10 @@ const MessageList: React.FC<MessageListProps> = ({
     messages.forEach((event, index) => {
       const prevEvent = index > 0 ? messages[index - 1] : null;
       const eventId = event.getId();
+      
       const isReadMarker = readMarkerId && eventId === readMarkerId;
+      // Only show the bar if there are actual new messages below it
+      const hasNewMessagesBelow = isReadMarker && index < messages.length - 1;
       
       let isGrouped = false;
       if (prevEvent) {
@@ -159,7 +160,7 @@ const MessageList: React.FC<MessageListProps> = ({
       groupedMessages.push(
         <div key={eventId || event.getTxnId()} ref={isReadMarker ? readMarkerRef : null}>
           <MessageItem event={event} isGrouped={isGrouped} />
-          {isReadMarker && (
+          {hasNewMessagesBelow && (
             <div className="flex items-center px-4 py-2">
               <div className="h-px flex-1 bg-discord-accent opacity-50" />
               <span className="mx-2 text-[10px] font-bold uppercase text-discord-accent">New Messages</span>

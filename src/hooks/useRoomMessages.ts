@@ -72,10 +72,18 @@ export const useRoomMessages = (roomId: string | null) => {
     if (!room) return;
 
     const updateReadMarker = () => {
+      // If we already have a marker for this room session, don't move it
+      // This keeps the "New Messages" bar stable as a reference of where you started
+      if (readMarkerId) return;
+
       const myUserId = client.getUserId();
       const mReadMarker = room.getAccountData('m.fully_read')?.getContent()?.event_id;
       const mReadReceipt = myUserId ? room.getEventReadUpTo(myUserId) : null;
-      setReadMarkerId(mReadMarker || mReadReceipt || null);
+      
+      const targetId = mReadMarker || mReadReceipt || null;
+      if (targetId) {
+        setReadMarkerId(targetId);
+      }
     };
 
     updateReadMarker();
