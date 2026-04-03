@@ -24,6 +24,7 @@ secrets.json
 .geminiignore
 GEMINI.md
 capture_logs.js
+.gitignore
 
 # OS / IDE
 .vscode/*

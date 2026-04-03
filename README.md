@@ -62,18 +62,9 @@ Reach is a modern, high-performance, Discord-inspired chat application built on 
 
 ---
 
-## 🔒 Security & Privacy
-
-Reach prioritizes your privacy:
-- **Zero-knowledge Encryption:** Messages are decrypted locally in your browser.
-- **WASM-powered Crypto:** Secure and fast cryptographic operations using the Matrix Rust SDK.
-- **Local Session Storage:** Your credentials and session tokens are stored securely in your browser's local storage.
-
----
-
 ## 📄 License
 
-This project is private and proprietary. See `package.json` for details.
+This project is licensed under the GPLv3 License. See the `LICENSE` file for details.
 
 ---
 
