@@ -146,11 +146,14 @@ export const useRoomMessages = (roomId: string | null) => {
       });
       try {
         if (messageLoadPolicy === 'latest') {
-          // Load from the very end of the timeline
-          await timelineWindow.current.load(undefined, 50);
+          // Load from the very end of the live timeline
+          // Passing undefined often starts at the beginning of the timeline set.
+          // To get the latest, we should target the last known event.
+          const liveEvents = targetRoom.getLiveTimeline().getEvents();
+          const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
+          await timelineWindow.current.load(lastEventId, 50);
         } else {
-          // Load around the last read receipt (standard Matrix behavior for load() with no arguments)
-          // or fallback to latest if no read receipt exists.
+          // Load around the last read receipt
           const readReceipt = targetRoom.getEventReadUpTo(client.getUserId()!);
           await timelineWindow.current.load(readReceipt || undefined, 50);
         }
@@ -194,7 +197,7 @@ export const useRoomMessages = (roomId: string | null) => {
       }
       timelineWindow.current = null;
     };
-  }, [client, roomId, refreshMessages]);
+  }, [client, roomId, refreshMessages, messageLoadPolicy]);
 
   const paginate = useCallback(async () => {
     if (!timelineWindow.current || !canPaginate || loading) return;
