@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowDown } from 'lucide-react';
 
 import { useAppStore } from '../../store/useAppStore';
 
@@ -25,14 +25,27 @@ const MessageList: React.FC<MessageListProps> = ({
   const bottomRef = useRef<HTMLDivElement>(null);
   const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback((smooth = false) => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if (smooth) {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
     }
   }, []);
 
-  // 1. Initial positioning and scroll restoration
+  // 1. Safety fallback: Ensure we eventually show the UI even if messages are empty/slow
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!isReady) setIsReady(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [isReady]);
+
+  // 2. Initial positioning and scroll restoration
   useEffect(() => {
     if (messages.length === 0) return;
 
@@ -43,21 +56,22 @@ const MessageList: React.FC<MessageListProps> = ({
           scrollToBottom();
           setTimeout(() => {
             scrollToBottom();
-            onScrollBottom?.(); // Mark as read when jumping to latest
+            onScrollBottom?.();
           }, 50);
         });
       }
       
-      const timer = setTimeout(() => setIsReady(true), 500);
+      const timer = setTimeout(() => setIsReady(true), 300);
       return () => clearTimeout(timer);
     } else if (scrollRef.current && prevScrollHeight !== null) {
+      // Restore scroll position after a pagination load
       const currentHeight = scrollRef.current.scrollHeight;
       scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
       setTimeout(() => setPrevScrollHeight(null), 0);
     }
   }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, onScrollBottom]);
 
-  // 2. Auto-scroll to bottom on NEW messages
+  // 3. Auto-scroll to bottom on NEW messages (only if near bottom)
   useEffect(() => {
     if (!isReady || !scrollRef.current || loading) return;
     
@@ -65,24 +79,28 @@ const MessageList: React.FC<MessageListProps> = ({
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
     
     if (isNearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom(true);
       onScrollBottom?.();
     }
-  }, [messages, isReady, loading, onScrollBottom]);
+  }, [messages, isReady, loading, onScrollBottom, scrollToBottom]);
 
-  const handleScroll = useCallback(async () => {
+  const handleScroll = useCallback(() => {
     if (!scrollRef.current || !isReady || loading) return;
 
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     
-    // Pagination trigger
+    // Pagination trigger (scroll near top)
     if (scrollTop < 150 && canPaginate && onPaginate) {
       setPrevScrollHeight(scrollHeight);
-      await onPaginate();
+      onPaginate().catch(console.error);
     }
 
-    // Read receipt trigger
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+    // Read receipt and Jump-to-Latest trigger
+    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+    const isAtBottom = distanceToBottom < 50;
+    
+    setShowJumpToLatest(distanceToBottom > 800);
+
     if (isAtBottom) {
       onScrollBottom?.();
     }
@@ -116,25 +134,37 @@ const MessageList: React.FC<MessageListProps> = ({
   };
 
   return (
-    <div 
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className={`flex-1 overflow-y-auto no-scrollbar transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}
-    >
-      <div className="flex min-h-full flex-col pb-4">
-        {canPaginate && (
-          <div className="flex items-center justify-center py-4">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-discord-accent" />
-            ) : (
-              <div className="h-6" />
-            )}
-          </div>
-        )}
-        
-        {renderMessages()}
-        <div ref={bottomRef} className="h-px" />
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={`flex-1 overflow-y-auto no-scrollbar transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}
+      >
+        <div className="flex min-h-full flex-col justify-end pb-4">
+          {canPaginate && (
+            <div className="flex items-center justify-center py-4">
+              {loading ? (
+                <Loader2 className="h-6 w-6 animate-spin text-discord-accent" />
+              ) : (
+                <div className="h-6" />
+              )}
+            </div>
+          )}
+          
+          {renderMessages()}
+          <div ref={bottomRef} className="h-px w-full" />
+        </div>
       </div>
+
+      {showJumpToLatest && (
+        <button 
+          onClick={() => scrollToBottom(true)}
+          className="absolute bottom-4 right-6 flex items-center space-x-2 rounded-full bg-discord-accent px-4 py-2 text-xs font-bold text-white shadow-lg transition hover:bg-opacity-90 active:scale-95 animate-in fade-in slide-in-from-bottom-2"
+        >
+          <ArrowDown className="h-4 w-4" />
+          <span>Jump to Latest</span>
+        </button>
+      )}
     </div>
   );
 };

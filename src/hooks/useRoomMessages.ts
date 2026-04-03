@@ -13,6 +13,9 @@ export const useRoomMessages = (roomId: string | null) => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const timelineWindow = useRef<TimelineWindow | null>(null);
   
+  // Track last sent receipt to avoid infinite loops/spam
+  const lastSentReceiptIdRef = useRef<string | null>(null);
+  
   // Keep track of current room to manage listeners
   const currentRoomRef = useRef<Room | null>(null);
 
@@ -142,6 +145,9 @@ export const useRoomMessages = (roomId: string | null) => {
     const initTimeline = async (targetRoom: Room) => {
       Promise.resolve().then(() => setLoading(true));
       
+      // Reset receipt tracker for new room
+      lastSentReceiptIdRef.current = null;
+
       // Create a fresh window for this room
       timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
         windowLimit: 1000
@@ -155,9 +161,11 @@ export const useRoomMessages = (roomId: string | null) => {
           
           await timelineWindow.current.load(lastEventId, 50);
           
-          // Ensure we are truly at the end (fetch forward if server has more)
-          while (timelineWindow.current.canPaginate(Direction.Forward)) {
+          // Ensure we are truly at the end, but limit attempts to avoid infinite loops
+          let forwardAttempts = 0;
+          while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 5) {
             await timelineWindow.current.paginate(Direction.Forward, 50);
+            forwardAttempts++;
           }
         } else {
           // Load around the last read receipt
@@ -165,23 +173,22 @@ export const useRoomMessages = (roomId: string | null) => {
           const readReceipt = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
           
           if (readReceipt) {
-            console.log(`Loading history around read receipt: ${readReceipt}`);
             await timelineWindow.current.load(readReceipt, 50);
             
-            // If we loaded a receipt, we should ensure the window includes the latest messages
-            // if they are within a reasonable distance, or allow the user to paginate forward.
-            // For now, let's try to paginate forward once to show some context after the receipt.
+            // Fetch a bit of forward context
             if (timelineWindow.current.canPaginate(Direction.Forward)) {
               await timelineWindow.current.paginate(Direction.Forward, 25);
             }
           } else {
-            // Fallback to latest if no receipt
-            console.log("No read receipt found, falling back to latest.");
+            // Fallback to latest
             const liveEvents = targetRoom.getLiveTimeline().getEvents();
             const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
             await timelineWindow.current.load(lastEventId, 50);
-            while (timelineWindow.current.canPaginate(Direction.Forward)) {
+            
+            let forwardAttempts = 0;
+            while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 5) {
               await timelineWindow.current.paginate(Direction.Forward, 50);
+              forwardAttempts++;
             }
           }
         }
@@ -279,12 +286,20 @@ export const useRoomMessages = (roomId: string | null) => {
   const markAsRead = useCallback(async () => {
     if (!client || !roomId || messages.length === 0) return;
     const lastMessage = messages[messages.length - 1];
-    if (!lastMessage || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
+    const eventId = lastMessage.getId();
+    
+    if (!eventId || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
+    
+    // Only send if it's a new event ID
+    if (eventId === lastSentReceiptIdRef.current) return;
 
     try {
+      lastSentReceiptIdRef.current = eventId;
       await client.sendReadReceipt(lastMessage);
     } catch (error) {
       console.error('Failed to send read receipt:', error);
+      // Reset on failure so we can try again
+      lastSentReceiptIdRef.current = null;
     }
   }, [client, roomId, messages]);
 
