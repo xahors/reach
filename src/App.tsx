@@ -8,7 +8,6 @@ import { callManager } from './core/callManager';
 import Sidebar from './components/layout/Sidebar';
 import ChannelList from './components/layout/ChannelList';
 import ChatArea from './components/chat/ChatArea';
-import MemberList from './components/layout/MemberList';
 import SecurityRecovery from './components/auth/SecurityRecovery';
 import ActiveCall from './components/calls/ActiveCall';
 import SettingsModal from './components/ui/SettingsModal';
@@ -44,6 +43,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 function MainApp() {
   const { isSynced, syncState } = useMatrixSync();
+  const { activeRoomId, setChannelDetailsOpen } = useAppStore();
+
+  // Close channel details when switching rooms
+  useEffect(() => {
+    setChannelDetailsOpen(false);
+  }, [activeRoomId, setChannelDetailsOpen]);
 
   if (!isSynced) {
     return (
@@ -62,7 +67,6 @@ function MainApp() {
       <Sidebar />
       <ChannelList />
       <ChatArea />
-      <MemberList />
       <SecurityRecovery />
       <ActiveCall />
       <SettingsModal />
