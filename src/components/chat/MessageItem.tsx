@@ -114,11 +114,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   
   const replacingEvent = event.replacingEvent();
   if (replacingEvent) {
-    const newContent = replacingEvent.getClearContent() || replacingEvent.getContent();
-    if (newContent?.['m.new_content']?.body) {
-      content = newContent['m.new_content'].body;
-    } else if (newContent?.body) {
-      content = newContent.body;
+    const editContent = replacingEvent.getClearContent() || replacingEvent.getContent();
+    // In Matrix, edits store the new text in content['m.new_content'].body
+    if (editContent?.['m.new_content']?.body) {
+      content = editContent['m.new_content'].body;
+    } else if (editContent?.body) {
+      content = editContent.body;
+    }
+  } else {
+    // If no replacingEvent yet, check if the content itself was already aggregated (some SDK versions)
+    const aggregatedContent = event.getContent();
+    if (aggregatedContent?.['m.new_content']?.body) {
+       content = aggregatedContent['m.new_content'].body;
     }
   }
   

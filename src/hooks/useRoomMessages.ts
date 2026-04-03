@@ -24,20 +24,11 @@ export const useRoomMessages = (roomId: string | null) => {
     
     let events: MatrixEvent[] = [];
     
-    // Determine if we are at the live end of the timeline.
-    // We are at the live end if we don't have a window yet, or if the window contains the last event of the live timeline.
-    const liveEvents = room.getLiveTimeline().getEvents();
-    const lastLiveEvent = liveEvents[liveEvents.length - 1];
     const windowEvents = timelineWindow.current?.getEvents() || [];
-    const lastWindowEvent = windowEvents[windowEvents.length - 1];
     
-    const isAtLiveEnd = !timelineWindow.current || 
-                        !lastLiveEvent || 
-                        (lastWindowEvent && lastWindowEvent.getId() === lastLiveEvent.getId()) ||
-                        (lastWindowEvent && lastWindowEvent.getTxnId() && lastWindowEvent.getTxnId() === lastLiveEvent.getTxnId());
-
-    if (timelineWindow.current && !isAtLiveEnd) {
-      events = [...timelineWindow.current.getEvents()];
+    // If we have a window, use it. It's more reliable for history + live updates.
+    if (timelineWindow.current) {
+      events = [...windowEvents];
     } else {
       events = [...room.getLiveTimeline().getEvents()];
     }
