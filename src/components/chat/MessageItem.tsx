@@ -24,8 +24,55 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
     }
   };
 
-  let content = event.getContent().body;
+  let content: React.ReactNode = event.getContent().body;
   
+  const renderMedia = () => {
+    const msgtype = event.getContent().msgtype;
+    const url = event.getContent().url;
+    if (!url || !client) return null;
+
+    const httpUrl = client.mxcUrlToHttp(url, 400, 400, 'scale', false, true);
+    if (!httpUrl) return null;
+
+    if (msgtype === EventStatus.NOT_SENT) return null; // Fallback
+
+    if (msgtype === 'm.image') {
+      return (
+        <div className="mt-2 max-w-sm overflow-hidden rounded-lg border border-discord-hover bg-black/20">
+          <img 
+            src={httpUrl} 
+            alt={event.getContent().body || 'Image'} 
+            className="max-h-80 w-auto cursor-pointer object-contain"
+            onClick={() => window.open(httpUrl, '_blank')}
+          />
+        </div>
+      );
+    }
+
+    if (msgtype === 'm.video') {
+      return (
+        <div className="mt-2 max-w-md overflow-hidden rounded-lg border border-discord-hover bg-black">
+          <video 
+            src={httpUrl} 
+            controls 
+            className="max-h-80 w-full"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <a 
+        href={httpUrl} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="mt-2 flex items-center rounded bg-discord-sidebar p-2 text-discord-accent hover:underline"
+      >
+        <span>📄 {event.getContent().body || 'Download File'}</span>
+      </a>
+    );
+  };
+
   if (event.isEncrypted()) {
     const clear = event.getClearContent();
     if (clear && clear.body) {
@@ -49,15 +96,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
     }
   }
 
+  const media = renderMedia();
+
   if (isGrouped) {
     return (
       <div className={`group relative -mt-0.5 flex items-center px-4 py-0.5 hover:bg-[#2e3035] ${isSending ? 'opacity-50' : ''} ${isFailed ? 'text-red-500' : ''}`}>
         <div className="absolute left-0 top-0 flex h-full w-14 items-center justify-center opacity-0 group-hover:opacity-100">
            <span className="text-[10px] text-discord-text-muted">{timestamp}</span>
         </div>
-        <div className="ml-10 text-base text-discord-text">
+        <div className="ml-10 flex flex-col text-base text-discord-text">
           {content}
-          {isFailed && <span className="ml-2 text-[10px] font-bold uppercase">Sending Failed</span>}
+          {media}
+          {isFailed && <span className="mt-1 text-[10px] font-bold uppercase">Sending Failed</span>}
         </div>
       </div>
     );
@@ -84,6 +134,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
         </div>
         <div className={`text-base text-discord-text ${isFailed ? 'text-red-400' : ''}`}>
           {content}
+          {media}
         </div>
       </div>
     </div>

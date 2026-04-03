@@ -94,7 +94,12 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         onSubmit={handleSend}
         className="flex items-center rounded-lg bg-[#383a40] px-4 py-2.5 shadow-sm"
       >
-        <button type="button" className="mr-4 text-discord-text-muted hover:text-discord-text transition">
+        <button 
+          type="button" 
+          disabled={isUploading}
+          onClick={() => fileInputRef.current?.click()}
+          className={`mr-4 transition ${isUploading ? 'animate-pulse text-discord-accent' : 'text-discord-text-muted hover:text-discord-text'}`}
+        >
           <PlusCircle className="h-6 w-6" />
         </button>
 
@@ -103,6 +108,34 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           value={message}
           onChange={(e) => {
             setMessage(e.target.value);
+            if (error) setError(null);
+          }}
+          placeholder={`Message #${roomName}`}
+          className="flex-1 bg-transparent text-base text-discord-text outline-none placeholder:text-discord-text-muted"
+        />
+
+        <div className="ml-4 flex items-center space-x-3 text-discord-text-muted">
+           <button type="button" className="hover:text-discord-text transition">
+             <Gift className="h-6 w-6" />
+           </button>
+           <button type="button" className="hover:text-discord-text transition">
+             <StickyNote className="h-6 w-6" />
+           </button>
+           <button 
+             type="button" 
+             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+             className={`transition ${showEmojiPicker ? 'text-discord-accent' : 'hover:text-discord-text'}`}
+           >
+             <Smile className="h-6 w-6" />
+           </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default ChatInput;
+arget.value);
             if (error) setError(null);
           }}
           placeholder={`Message #${roomName}`}
