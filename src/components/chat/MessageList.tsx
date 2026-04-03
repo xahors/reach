@@ -10,13 +10,15 @@ interface MessageListProps {
   loading?: boolean;
   onPaginate?: () => Promise<void>;
   canPaginate?: boolean;
+  onScrollBottom?: () => void;
 }
 
 const MessageList: React.FC<MessageListProps> = ({ 
   messages, 
   loading, 
   onPaginate, 
-  canPaginate 
+  canPaginate,
+  onScrollBottom
 }) => {
   const { messageLoadPolicy } = useAppStore();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -37,26 +39,25 @@ const MessageList: React.FC<MessageListProps> = ({
     if (!isReady) {
       // First time messages are loaded for this channel
       if (messageLoadPolicy === 'latest') {
-        // Use requestAnimationFrame to ensure DOM has rendered
         requestAnimationFrame(() => {
           scrollToBottom();
-          // Second pass after a short delay to account for most layout shifts
-          setTimeout(scrollToBottom, 50);
+          setTimeout(() => {
+            scrollToBottom();
+            onScrollBottom?.(); // Mark as read when jumping to latest
+          }, 50);
         });
       }
       
-      // Delay setting ready to prevent immediate pagination triggers
       const timer = setTimeout(() => setIsReady(true), 500);
       return () => clearTimeout(timer);
     } else if (scrollRef.current && prevScrollHeight !== null) {
-      // Restore scroll position after a pagination load
       const currentHeight = scrollRef.current.scrollHeight;
       scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
       setTimeout(() => setPrevScrollHeight(null), 0);
     }
-  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom]);
+  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, onScrollBottom]);
 
-  // 2. Auto-scroll to bottom on NEW messages (only if already near bottom)
+  // 2. Auto-scroll to bottom on NEW messages
   useEffect(() => {
     if (!isReady || !scrollRef.current || loading) return;
     
@@ -65,21 +66,27 @@ const MessageList: React.FC<MessageListProps> = ({
     
     if (isNearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      onScrollBottom?.();
     }
-  }, [messages, isReady, loading]);
+  }, [messages, isReady, loading, onScrollBottom]);
 
   const handleScroll = useCallback(async () => {
-    // Don't paginate until initial positioning is done
-    if (!scrollRef.current || !isReady || loading || !canPaginate || !onPaginate) return;
+    if (!scrollRef.current || !isReady || loading) return;
 
-    const { scrollTop, scrollHeight } = scrollRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     
-    // Trigger pagination when scrolled near the top
-    if (scrollTop < 150) {
+    // Pagination trigger
+    if (scrollTop < 150 && canPaginate && onPaginate) {
       setPrevScrollHeight(scrollHeight);
       await onPaginate();
     }
-  }, [loading, canPaginate, onPaginate, isReady]);
+
+    // Read receipt trigger
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+    if (isAtBottom) {
+      onScrollBottom?.();
+    }
+  }, [loading, canPaginate, onPaginate, isReady, onScrollBottom]);
 
   const renderMessages = () => {
     const groupedMessages: React.ReactNode[] = [];

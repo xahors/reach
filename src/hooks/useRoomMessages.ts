@@ -165,10 +165,21 @@ export const useRoomMessages = (roomId: string | null) => {
           const readReceipt = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
           
           if (readReceipt) {
+            console.log(`Loading history around read receipt: ${readReceipt}`);
             await timelineWindow.current.load(readReceipt, 50);
+            
+            // If we loaded a receipt, we should ensure the window includes the latest messages
+            // if they are within a reasonable distance, or allow the user to paginate forward.
+            // For now, let's try to paginate forward once to show some context after the receipt.
+            if (timelineWindow.current.canPaginate(Direction.Forward)) {
+              await timelineWindow.current.paginate(Direction.Forward, 25);
+            }
           } else {
             // Fallback to latest if no receipt
-            await timelineWindow.current.load(undefined, 50);
+            console.log("No read receipt found, falling back to latest.");
+            const liveEvents = targetRoom.getLiveTimeline().getEvents();
+            const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
+            await timelineWindow.current.load(lastEventId, 50);
             while (timelineWindow.current.canPaginate(Direction.Forward)) {
               await timelineWindow.current.paginate(Direction.Forward, 50);
             }
@@ -265,5 +276,17 @@ export const useRoomMessages = (roomId: string | null) => {
     }
   }, [client, roomId, refreshMessages]);
 
-  return { messages, loading, paginate, canPaginate, redactAllMyMessages };
+  const markAsRead = useCallback(async () => {
+    if (!client || !roomId || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
+
+    try {
+      await client.sendReadReceipt(lastMessage);
+    } catch (error) {
+      console.error('Failed to send read receipt:', error);
+    }
+  }, [client, roomId, messages]);
+
+  return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead };
 };
