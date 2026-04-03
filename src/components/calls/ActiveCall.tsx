@@ -2,34 +2,38 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { callManager } from '../../core/callManager';
 import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, GripHorizontal, Minus } from 'lucide-react';
-import { CallEvent, type MatrixCall } from 'matrix-js-sdk';
+import { CallEvent } from 'matrix-js-sdk';
 import Draggable from 'react-draggable';
 
-const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolean }> = ({ call, isLocal }) => {
+const MicActivityIndicator: React.FC<{ stream: MediaStream | null }> = ({ stream }) => {
   const [level, setLevel] = useState(0);
   const requestRef = useRef<number>(0);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   useEffect(() => {
-    if (!call) return;
-
-    // The stream might be added later, so we poll or listen for feeds changed
-    const stream = isLocal ? call.localUsermediaStream : call.remoteUsermediaStream;
-    
     if (!stream || stream.getAudioTracks().length === 0) {
       Promise.resolve().then(() => setLevel(0));
       return;
     }
 
+    let audioCtx: AudioContext | null = null;
+
     try {
-      const audioCtx = callManager.getContext();
+      audioCtx = callManager.getContext();
       if (!audioCtx) return;
+
+      // Clean up previous source if any
+      if (sourceRef.current) sourceRef.current.disconnect();
+      if (analyserRef.current) analyserRef.current.disconnect();
 
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.3;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
       source.connect(analyser);
+      
+      sourceRef.current = source;
       analyserRef.current = analyser;
 
       const bufferLength = analyser.frequencyBinCount;
@@ -44,8 +48,8 @@ const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolea
           sum += dataArray[i];
         }
         const average = sum / bufferLength;
-        // Boost sensitivity for better visualization
-        const normalized = Math.min((average * 2) / 128, 1);
+        // High sensitivity for visualization: boost the signal
+        const normalized = Math.min((average * 2.5) / 128, 1);
         setLevel(normalized);
         requestRef.current = requestAnimationFrame(update);
       };
@@ -54,19 +58,19 @@ const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolea
 
       return () => {
         cancelAnimationFrame(requestRef.current);
-        source.disconnect();
-        analyser.disconnect();
+        if (sourceRef.current) sourceRef.current.disconnect();
+        if (analyserRef.current) analyserRef.current.disconnect();
       };
     } catch (e) {
       console.warn('Mic indicator failed', e);
     }
-  }, [call, isLocal]);
+  }, [stream]);
 
   return (
-    <div className="h-1.5 w-full bg-discord-black rounded-full overflow-hidden mt-1 flex">
+    <div className="h-2 w-full bg-discord-black rounded-full overflow-hidden mt-1 flex border border-white/5">
       <div 
-        className="h-full bg-green-500 transition-all duration-75" 
-        style={{ width: `${level * 100}%`, opacity: level > 0.05 ? 1 : 0.2 }}
+        className="h-full bg-green-500 transition-all duration-75 ease-out shadow-[0_0_8px_rgba(34,197,94,0.6)]" 
+        style={{ width: `${level * 100}%`, opacity: level > 0.02 ? 1 : 0.2 }}
       />
     </div>
   );
@@ -83,71 +87,79 @@ const ActiveCall: React.FC = () => {
     isCameraOff, 
     setCameraOff 
   } = useAppStore();
+  
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [callState, setCallState] = useState<string>('');
   
-  // nodeRefs for react-draggable to avoid findDOMNode (React 19 compatibility)
+  const [callState, setCallState] = useState<string>('');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  
+  // nodeRefs for react-draggable
   const incomingNodeRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!activeCall) {
       if (callState !== '') {
-        Promise.resolve().then(() => setCallState(''));
+        Promise.resolve().then(() => {
+          setCallState('');
+          setLocalStream(null);
+          setRemoteStream(null);
+        });
       }
       return;
     }
 
-    if (callState !== activeCall.state) {
-      Promise.resolve().then(() => setCallState(activeCall.state));
-    }
-    
-    setMuted(activeCall.isMicrophoneMuted());
-    setCameraOff(activeCall.isLocalVideoMuted());
-
-    const onState = (state: string) => {
-       setCallState(state);
-    };
-
-    const updateStreams = () => {
-       if (activeCall.localUsermediaStream && localVideoRef.current) {
-          localVideoRef.current.srcObject = activeCall.localUsermediaStream;
-       }
-       if (activeCall.remoteUsermediaStream) {
-          if (remoteVideoRef.current) {
-             remoteVideoRef.current.srcObject = activeCall.remoteUsermediaStream;
-          }
-          if (audioRef.current) {
-             audioRef.current.srcObject = activeCall.remoteUsermediaStream;
-          }
-       }
-    };
-
-    const onMute = () => {
+    const updateState = () => {
+      setCallState(activeCall.state);
       setMuted(activeCall.isMicrophoneMuted());
       setCameraOff(activeCall.isLocalVideoMuted());
+      setLocalStream(activeCall.localUsermediaStream || null);
+      setRemoteStream(activeCall.remoteUsermediaStream || null);
     };
 
-    updateStreams();
+    updateState();
+    
+    // Poll for stream updates since they don't always fire events immediately
+    const interval = setInterval(updateState, 1000);
 
-    activeCall.on(CallEvent.State, onState);
-    activeCall.on(CallEvent.FeedsChanged, updateStreams);
-    activeCall.on(CallEvent.LocalHoldUnhold, updateStreams);
-    activeCall.on(CallEvent.RemoteHoldUnhold, updateStreams);
-    // @ts-expect-error: internal events
-    activeCall.on('local_video_muted', onMute);
-    // @ts-expect-error: internal events
-    activeCall.on('microphone_muted', onMute);
+    activeCall.on(CallEvent.State, updateState);
+    activeCall.on(CallEvent.FeedsChanged, updateState);
+    activeCall.on(CallEvent.LocalHoldUnhold, updateState);
+    activeCall.on(CallEvent.RemoteHoldUnhold, updateState);
 
     return () => {
-      activeCall.removeListener(CallEvent.State, onState);
-      activeCall.removeListener(CallEvent.FeedsChanged, updateStreams);
-      activeCall.removeListener(CallEvent.LocalHoldUnhold, updateStreams);
-      activeCall.removeListener(CallEvent.RemoteHoldUnhold, updateStreams);
+      clearInterval(interval);
+      activeCall.removeListener(CallEvent.State, updateState);
+      activeCall.removeListener(CallEvent.FeedsChanged, updateState);
+      activeCall.removeListener(CallEvent.LocalHoldUnhold, updateState);
+      activeCall.removeListener(CallEvent.RemoteHoldUnhold, updateState);
     };
   }, [activeCall, callState, setMuted, setCameraOff]);
+
+  // Ensure video elements stay in sync with streams
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      if (localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = localStream;
+      }
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      if (remoteVideoRef.current.srcObject !== remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+      }
+    }
+    if (audioRef.current && remoteStream) {
+      if (audioRef.current.srcObject !== remoteStream) {
+        audioRef.current.srcObject = remoteStream;
+      }
+    }
+  }, [remoteStream]);
 
   const toggleMute = () => {
     if (activeCall) {
@@ -168,8 +180,6 @@ const ActiveCall: React.FC = () => {
   };
 
   if (!activeCall && !incomingCall) return null;
-  
-  // Hide the floating modal if minimized
   if (activeCall && isCallMinimized) return null;
 
   if (incomingCall) {
@@ -225,15 +235,21 @@ const ActiveCall: React.FC = () => {
                <span className="text-xs text-discord-text-muted animate-pulse">{!isCameraOff ? 'Video' : 'Voice'}</span>
             </div>
             
-            <div className="mb-4 rounded-md bg-discord-black/40 p-2">
-              <div className="text-[10px] text-discord-text-muted mb-1 font-bold uppercase tracking-tight">Microphone Activity</div>
-              <MicActivityIndicator call={activeCall} isLocal={true} />
+            <div className="mb-4 rounded-md bg-discord-black/60 p-3 border border-white/5">
+              <div className="flex justify-between items-center mb-1">
+                <div className="text-[10px] text-discord-text-muted font-bold uppercase tracking-widest">Microphone Activity</div>
+                {isMuted && <span className="text-[9px] bg-red-500/20 text-red-500 px-1 rounded">MUTED</span>}
+              </div>
+              <MicActivityIndicator stream={localStream} />
             </div>
 
             {/* Video Area */}
-            <div className={`relative mb-4 bg-black rounded overflow-hidden transition-all duration-300 ${!isCameraOff ? 'h-48' : 'h-0 opacity-0 mb-0'}`}>
+            <div className={`relative mb-4 bg-black rounded-lg overflow-hidden transition-all duration-500 shadow-inner ${!isCameraOff ? 'h-56' : 'h-0 opacity-0 mb-0'}`}>
               <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-              <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-2 right-2 w-24 h-16 object-cover bg-gray-800 rounded border border-gray-600" />
+              <div className="absolute bottom-2 right-2 w-32 h-24 overflow-hidden rounded-md border-2 border-discord-border shadow-lg bg-discord-dark">
+                <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-2 right-2 w-full h-full object-cover" />
+                {isCameraOff && <div className="flex h-full items-center justify-center text-discord-text-muted bg-discord-dark"><VideoOff className="h-6 w-6" /></div>}
+              </div>
             </div>
 
             {/* Audio element for voice calls */}
@@ -242,26 +258,26 @@ const ActiveCall: React.FC = () => {
             <div className="flex justify-center space-x-4">
               <button 
                 onClick={toggleMute}
-                className={`h-10 w-10 rounded-full flex items-center justify-center text-white transition ${isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
+                className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${isMuted ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
                 title={isMuted ? "Unmute" : "Mute"}
               >
-                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
               </button>
               
               <button 
                 onClick={toggleCamera}
-                className={`h-10 w-10 rounded-full flex items-center justify-center text-white transition ${!isCameraOff ? 'bg-discord-accent hover:bg-opacity-90' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
+                className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${!isCameraOff ? 'bg-discord-accent hover:bg-opacity-90' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
                 title={!isCameraOff ? "Turn Camera Off" : "Turn Camera On"}
               >
-                {!isCameraOff ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                {!isCameraOff ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
               </button>
 
               <button 
                 onClick={() => callManager.hangupCall()}
-                className="h-10 w-10 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition"
+                className="h-12 w-12 rounded-full bg-red-500 hover:bg-red-600 shadow-lg flex items-center justify-center text-white transition-all duration-200 hover:rotate-12"
                 title="End Call"
               >
-                <PhoneOff className="h-5 w-5" />
+                <PhoneOff className="h-6 w-6" />
               </button>
             </div>
           </div>
