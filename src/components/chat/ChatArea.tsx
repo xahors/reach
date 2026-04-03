@@ -76,6 +76,7 @@ const ChatArea: React.FC = () => {
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Message List */}
           <MessageList 
+            key={activeRoomId}
             messages={messages} 
             loading={loading}
             onPaginate={paginate}

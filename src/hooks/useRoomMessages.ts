@@ -141,21 +141,37 @@ export const useRoomMessages = (roomId: string | null) => {
 
     const initTimeline = async (targetRoom: Room) => {
       Promise.resolve().then(() => setLoading(true));
+      
+      // Create a fresh window for this room
       timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
         windowLimit: 1000
       });
+
       try {
         if (messageLoadPolicy === 'latest') {
-          // Load from the very end of the live timeline
-          // Passing undefined often starts at the beginning of the timeline set.
-          // To get the latest, we should target the last known event.
-          const liveEvents = targetRoom.getLiveTimeline().getEvents();
-          const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
-          await timelineWindow.current.load(lastEventId, 50);
+          // Passing undefined to load() with a size typically loads the very end of the live timeline.
+          await timelineWindow.current.load(undefined, 50);
+          
+          // Matrix SDK load(undefined) sometimes starts at the beginning if not careful.
+          // Let's ensure we are at the end by checking if we can paginate forward.
+          // If we can, it means we aren't at the live end yet.
+          while (timelineWindow.current.canPaginate(Direction.Forward)) {
+            await timelineWindow.current.paginate(Direction.Forward, 50);
+          }
         } else {
           // Load around the last read receipt
-          const readReceipt = targetRoom.getEventReadUpTo(client.getUserId()!);
-          await timelineWindow.current.load(readReceipt || undefined, 50);
+          const myUserId = client.getUserId();
+          const readReceipt = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
+          
+          if (readReceipt) {
+            await timelineWindow.current.load(readReceipt, 50);
+          } else {
+            // Fallback to latest if no receipt
+            await timelineWindow.current.load(undefined, 50);
+            while (timelineWindow.current.canPaginate(Direction.Forward)) {
+              await timelineWindow.current.paginate(Direction.Forward, 50);
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to load timeline:', error);
