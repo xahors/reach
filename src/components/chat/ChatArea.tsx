@@ -4,13 +4,13 @@ import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import MessageList from './MessageList';
 import ChatInput from './ChatInput';
-import { Hash, Bell, Pin, Users, Search, Inbox, HelpCircle, Phone, Video } from 'lucide-react';
+import { Hash, Bell, Pin, Users, Search, Inbox, HelpCircle, Phone, Video, Trash2 } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 
 const ChatArea: React.FC = () => {
   const { activeRoomId } = useAppStore();
   const client = useMatrixClient();
-  const { messages } = useRoomMessages(activeRoomId);
+  const { messages, redactAllMyMessages, loading } = useRoomMessages(activeRoomId);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
@@ -52,6 +52,14 @@ const ChatArea: React.FC = () => {
           <button className="hover:text-discord-text transition"><Bell className="h-6 w-6" /></button>
           <button className="hover:text-discord-text transition"><Pin className="h-6 w-6" /></button>
           <button className="hover:text-discord-text transition"><Users className="h-6 w-6" /></button>
+          <button 
+            onClick={redactAllMyMessages} 
+            disabled={loading}
+            className={`hover:text-red-500 transition ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title="Delete all my messages in this channel"
+          >
+            <Trash2 className="h-6 w-6" />
+          </button>
           
           <div className="relative">
             <input

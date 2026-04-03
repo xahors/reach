@@ -199,5 +199,40 @@ export const useRoomMessages = (roomId: string | null) => {
     }
   }, [canPaginate, loading, refreshMessages]);
 
-  return { messages, loading, paginate, canPaginate };
+  const redactAllMyMessages = useCallback(async () => {
+    if (!client || !roomId) return;
+    const room = client.getRoom(roomId);
+    if (!room) return;
+
+    const myUserId = client.getUserId();
+    if (!myUserId) return;
+
+    const eventsToRedact = room.getLiveTimeline().getEvents().filter(event => 
+      event.getSender() === myUserId && 
+      !event.isRedacted() && 
+      (event.getType() === 'm.room.message' || event.getType() === 'm.room.encrypted')
+    );
+
+    if (eventsToRedact.length === 0) return;
+
+    if (!window.confirm(`Are you sure you want to delete ${eventsToRedact.length} of your messages in this channel?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      for (const event of eventsToRedact) {
+        await client.redactEvent(roomId, event.getId()!);
+        // Small delay to avoid hitting rate limits too hard
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      refreshMessages();
+    } catch (error) {
+      console.error('Failed to redact messages:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, roomId, refreshMessages]);
+
+  return { messages, loading, paginate, canPaginate, redactAllMyMessages };
 };
