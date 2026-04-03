@@ -142,13 +142,7 @@ export const useRoomMessages = (roomId: string | null) => {
         windowLimit: 1000
       });
       try {
-        await timelineWindow.current.load(undefined, 100);
-        // Try to pull even more history immediately (up to 3 times)
-        for (let i = 0; i < 3; i++) {
-          if (timelineWindow.current.canPaginate(Direction.Backward)) {
-            await timelineWindow.current.paginate(Direction.Backward, 50);
-          }
-        }
+        await timelineWindow.current.load(undefined, 50);
       } catch (error) {
         console.error('Failed to load timeline:', error);
       } finally {

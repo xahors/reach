@@ -11,7 +11,7 @@ import { callManager } from '../../core/callManager';
 const ChatArea: React.FC = () => {
   const { activeRoomId, isChannelDetailsOpen, setChannelDetailsOpen } = useAppStore();
   const client = useMatrixClient();
-  const { messages } = useRoomMessages(activeRoomId);
+  const { messages, loading, paginate, canPaginate } = useRoomMessages(activeRoomId);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
@@ -75,7 +75,12 @@ const ChatArea: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Message List */}
-          <MessageList messages={messages} />
+          <MessageList 
+            messages={messages} 
+            loading={loading}
+            onPaginate={paginate}
+            canPaginate={canPaginate}
+          />
 
           {/* Chat Input */}
           <ChatInput roomId={activeRoomId} roomName={activeRoom.name} />
