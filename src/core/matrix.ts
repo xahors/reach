@@ -1,13 +1,26 @@
 import * as sdk from 'matrix-js-sdk';
 import Olm from '@matrix-org/olm';
 import * as RustSdkCryptoJs from '@matrix-org/matrix-sdk-crypto-wasm';
+import { type CryptoApi } from 'matrix-js-sdk/lib/crypto-api';
+
+declare global {
+  interface Window {
+    OLM_OPTIONS?: {
+      locateFile?: (path: string) => string;
+    };
+    Olm?: typeof Olm;
+  }
+}
 
 // Ensure Olm and Rust crypto options are set
-// @ts-expect-error: necessary to bypass SDK type mismatch
 window.OLM_OPTIONS = {
   locateFile: () => '/olm.wasm'
 };
 window.Olm = Olm;
+
+interface InternalCrypto extends CryptoApi {
+  checkKeyBackup?: () => Promise<void>;
+}
 
 class MatrixService {
   private client: sdk.MatrixClient | null = null;
@@ -97,7 +110,8 @@ class MatrixService {
       password: password,
     });
 
-    this.client = await this.createClientInstance(homeserver, result.access_token, result.user_id, result.device_id);
+    const client = await this.createClientInstance(homeserver, result.access_token, result.user_id, result.device_id);
+    this.client = client;
 
     localStorage.setItem('matrix_access_token', result.access_token);
     localStorage.setItem('matrix_user_id', result.user_id);
@@ -117,7 +131,8 @@ class MatrixService {
 
     if (accessToken && userId && homeserver) {
       await this.initWasm();
-      this.client = await this.createClientInstance(homeserver, accessToken, userId, deviceId || undefined);
+      const client = await this.createClientInstance(homeserver, accessToken, userId, deviceId || undefined);
+      this.client = client;
       await this.initEncryption();
       await this.start();
       return this.client;
@@ -153,7 +168,7 @@ class MatrixService {
         
         // After Rust crypto is initialized, we can check for backup
         try {
-          const crypto = this.getCrypto();
+          const crypto = this.getCrypto() as InternalCrypto | null;
           if (crypto && typeof crypto.checkKeyBackup === 'function') {
             console.log("Checking key backup status...");
             await crypto.checkKeyBackup();
@@ -171,11 +186,13 @@ class MatrixService {
     }
   }
 
-  getCrypto(): any {
+  getCrypto(): CryptoApi | null {
     if (!this.client) return null;
     // In SDK v41, getCrypto() returns this.cryptoBackend
-    return this.client.getCrypto() || (this.client as any).cryptoBackend;
+    const internalClient = this.client as unknown as { cryptoBackend?: InternalCrypto };
+    return (this.client.getCrypto() || internalClient.cryptoBackend) as CryptoApi | null;
   }
+
 
   isCryptoEnabled(): boolean {
     return !!this.getCrypto();

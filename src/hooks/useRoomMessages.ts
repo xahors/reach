@@ -73,7 +73,7 @@ export const useRoomMessages = (roomId: string | null) => {
 
   useEffect(() => {
     if (!client || !roomId) {
-      setMessages([]);
+      Promise.resolve().then(() => setMessages([]));
       currentRoomRef.current = null;
       return;
     }
@@ -81,7 +81,10 @@ export const useRoomMessages = (roomId: string | null) => {
     const room = client.getRoom(roomId);
     currentRoomRef.current = room;
 
-    const onTimelineEvent = (event: MatrixEvent, evRoom: Room | undefined) => {
+    // Use a small timeout to avoid setState during effect body
+    const initialLoadTimeout = setTimeout(() => updateMessages(), 0);
+
+    const onTimelineEvent = (_event: MatrixEvent, evRoom: Room | undefined) => {
       if (evRoom?.roomId === roomId) {
         // We still try to advance the window in the background to keep it updated
         if (timelineWindow.current) {
@@ -130,7 +133,7 @@ export const useRoomMessages = (roomId: string | null) => {
     };
 
     const initTimeline = async (targetRoom: Room) => {
-      setLoading(true);
+      Promise.resolve().then(() => setLoading(true));
       timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
         windowLimit: 250
       });
@@ -140,7 +143,7 @@ export const useRoomMessages = (roomId: string | null) => {
         console.error('Failed to load timeline:', error);
       } finally {
         updateMessages();
-        setLoading(false);
+        Promise.resolve().then(() => setLoading(false));
       }
     };
 
@@ -162,6 +165,7 @@ export const useRoomMessages = (roomId: string | null) => {
     }
 
     return () => {
+      clearTimeout(initialLoadTimeout);
       client.removeListener(RoomEvent.Timeline, onTimelineEvent);
       client.removeListener(MatrixEventEvent.Decrypted, onEventDecrypted);
       // @ts-expect-error: internal event
@@ -175,7 +179,7 @@ export const useRoomMessages = (roomId: string | null) => {
       }
       timelineWindow.current = null;
     };
-  }, [client, roomId, updateMessages]);
+  }, [client, roomId, updateMessages, messages]);
 
   const paginate = useCallback(async () => {
     if (!timelineWindow.current || !canPaginate || loading) return;

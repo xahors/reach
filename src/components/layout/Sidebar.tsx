@@ -3,18 +3,19 @@ import { useSpaces } from '../../hooks/useSpaces';
 import { useAppStore } from '../../store/useAppStore';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { cn } from '../../utils/cn';
+import { type Room } from 'matrix-js-sdk';
 
 const Sidebar: React.FC = () => {
   const { spaces, loading } = useSpaces();
   const { activeSpaceId, setActiveSpaceId } = useAppStore();
   const client = useMatrixClient();
 
-  const getAvatar = (space: any) => {
+  const getAvatar = (space: Room) => {
     if (!client || typeof space.getAvatarUrl !== 'function') return null;
     try {
       // In matrix-js-sdk v41+, baseUrl must be a valid URL string, null can throw
       return space.getAvatarUrl(client.getHomeserverUrl(), 48, 48, 'crop');
-    } catch (e) {
+    } catch {
       return null;
     }
   };
@@ -63,7 +64,7 @@ const Sidebar: React.FC = () => {
               />
               {avatarUrl ? (
                 <img
-                  src={avatarUrl || ''}
+                  src={avatarUrl}
                   alt={space.name}
                   className={cn(
                     "h-12 w-12 rounded-[24px] bg-discord-sidebar object-cover transition-all duration-200 group-hover:rounded-[16px]",

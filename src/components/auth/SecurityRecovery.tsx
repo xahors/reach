@@ -74,9 +74,10 @@ const SecurityRecovery: React.FC = () => {
         setIsHidden(true);
         setNeedsRecovery(false);
       }, 2000);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Recovery failed:', error);
-      setStatus(`Failed: ${error.message || 'Invalid key'}`);
+      const message = error instanceof Error ? error.message : 'Invalid key';
+      setStatus(`Failed: ${message}`);
     } finally {
       setLoading(false);
     }

@@ -49,9 +49,10 @@ export const useDirectMessages = () => {
   useEffect(() => {
     if (!client) return;
 
-    updateDMs();
+    // Use a small timeout to avoid setState during effect body
+    const timeout = setTimeout(() => updateDMs(), 0);
 
-    const onAccountData = (event: any) => {
+    const onAccountData = (event: { getType: () => string }) => {
       if (event.getType() === EventType.Direct) {
         Promise.resolve().then(() => updateDMs());
       }
@@ -67,6 +68,7 @@ export const useDirectMessages = () => {
     client.on(ClientEvent.Sync, onSync);
 
     return () => {
+      clearTimeout(timeout);
       client.removeListener(ClientEvent.AccountData, onAccountData);
       client.removeListener(ClientEvent.Sync, onSync);
     };

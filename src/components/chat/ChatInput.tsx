@@ -4,7 +4,7 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
 import { matrixService } from '../../core/matrix';
 import { PlusCircle, Gift, StickyNote, Smile, ShieldAlert } from 'lucide-react';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
+import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
 
 interface ChatInputProps {
   roomId: string;
@@ -44,19 +44,20 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         body: message.trim(),
       });
       setMessage('');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to send message:', err);
       
+      const messageStr = err instanceof Error ? err.message : '';
       // Check if it's an encryption error
-      if (err.message?.includes('encryption') || !matrixService.isCryptoEnabled()) {
+      if (messageStr.includes('encryption') || !matrixService.isCryptoEnabled()) {
         setError('Encryption required. Please verify your session.');
       } else {
-        setError(`Failed to send: ${err.message}`);
+        setError(`Failed to send: ${messageStr || 'Unknown error'}`);
       }
     }
   };
 
-  const onEmojiClick = (emojiData: any) => {
+  const onEmojiClick = (emojiData: EmojiClickData) => {
     setMessage((prev) => prev + emojiData.emoji);
   };
 

@@ -19,7 +19,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
     if (!client || !sender || typeof sender.getAvatarUrl !== 'function') return null;
     try {
       return sender.getAvatarUrl(client.getHomeserverUrl(), 40, 40, 'crop', undefined, true);
-    } catch (e) {
+    } catch {
       return null;
     }
   };
@@ -35,7 +35,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
         <span className="flex items-center">
           <span className="mr-2">🔐 Unable to decrypt message (waiting for keys)</span>
           <button 
-            onClick={() => client?.decryptEventIfNeeded(event)}
+            onClick={() => {
+              client?.decryptEventIfNeeded(event).catch(() => {});
+            }}
             className="text-xs font-bold text-discord-accent hover:underline"
           >
             Retry

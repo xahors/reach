@@ -9,19 +9,28 @@ export const useRoomMembers = (roomId: string | null) => {
 
   const updateMembers = useCallback(() => {
     if (!client || !roomId) {
-      Promise.resolve().then(() => setMembers([]));
+      Promise.resolve().then(() => {
+        setMembers([]);
+        setLoading(false);
+      });
       return;
     }
 
     const room = client.getRoom(roomId);
-    if (!room) return;
+    if (!room) {
+      Promise.resolve().then(() => setLoading(false));
+      return;
+    }
 
     const joinedMembers = room.getJoinedMembers();
     if (!Array.isArray(joinedMembers)) {
-      Promise.resolve().then(() => setMembers([]));
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setMembers([]);
+        setLoading(false);
+      });
       return;
     }
+
 
     // Sort members by power level and then name
     joinedMembers.sort((a, b) => {
@@ -31,18 +40,23 @@ export const useRoomMembers = (roomId: string | null) => {
       return a.name.localeCompare(b.name);
     });
 
-    setMembers(joinedMembers);
-    setLoading(false);
+    Promise.resolve().then(() => {
+      setMembers(joinedMembers);
+      setLoading(false);
+    });
   }, [client, roomId]);
 
   useEffect(() => {
     if (!client || !roomId) {
-      setMembers([]);
+      Promise.resolve().then(() => {
+        setMembers([]);
+        setLoading(false);
+      });
       return;
     }
 
-    setLoading(true);
-    updateMembers();
+    Promise.resolve().then(() => setLoading(true));
+    const timeout = setTimeout(() => updateMembers(), 0);
 
     const onRoomMember = () => updateMembers();
     const onPresence = () => updateMembers();
@@ -51,6 +65,7 @@ export const useRoomMembers = (roomId: string | null) => {
     client.on(ClientEvent.Event, onPresence); // For presence updates
 
     return () => {
+      clearTimeout(timeout);
       client.removeListener(RoomEvent.MyMembership, onRoomMember);
       client.removeListener(ClientEvent.Event, onPresence);
     };

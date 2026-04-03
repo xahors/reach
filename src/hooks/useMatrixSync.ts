@@ -11,17 +11,24 @@ export const useMatrixSync = () => {
   });
 
   useEffect(() => {
-    if (!isLoggedIn || !client) {
-      if (isSynced) Promise.resolve().then(() => setSynced(false));
-      if (syncState !== null) Promise.resolve().then(() => setSyncState(null));
+    if (!client || !isLoggedIn) {
+      if (isSynced) {
+        Promise.resolve().then(() => setSynced(false));
+      }
+      if (syncState !== null) {
+        Promise.resolve().then(() => setSyncState(null));
+      }
       return;
     }
 
+
     const onSync = (state: string) => {
-      setSyncState(state);
-      if (state === 'PREPARED' || state === 'SYNCING') {
-        setSynced(true);
-      }
+      Promise.resolve().then(() => {
+        setSyncState(state);
+        if (state === 'PREPARED' || state === 'SYNCING') {
+          setSynced(true);
+        }
+      });
     };
 
     client.on(ClientEvent.Sync, onSync);
@@ -35,7 +42,7 @@ export const useMatrixSync = () => {
     return () => {
       client.removeListener(ClientEvent.Sync, onSync);
     };
-  }, [client, isLoggedIn, setSynced, syncState]);
+  }, [client, isLoggedIn, setSynced, syncState, isSynced]);
 
   return { isSynced, syncState };
 };

@@ -14,11 +14,15 @@ const ActiveCall: React.FC = () => {
 
   useEffect(() => {
     if (!activeCall) {
-      setCallState('');
+      if (callState !== '') {
+        Promise.resolve().then(() => setCallState(''));
+      }
       return;
     }
 
-    setCallState(activeCall.state);
+    if (callState !== activeCall.state) {
+      Promise.resolve().then(() => setCallState(activeCall.state));
+    }
 
     const onState = (state: string) => {
        setCallState(state);
@@ -50,7 +54,7 @@ const ActiveCall: React.FC = () => {
       activeCall.removeListener(CallEvent.LocalHoldUnhold, updateStreams);
       activeCall.removeListener(CallEvent.RemoteHoldUnhold, updateStreams);
     };
-  }, [activeCall]);
+  }, [activeCall, callState]);
 
   if (!activeCall && !incomingCall) return null;
 

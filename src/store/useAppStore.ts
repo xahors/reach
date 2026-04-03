@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { type MatrixCall } from 'matrix-js-sdk';
 
 interface AppState {
   isLoggedIn: boolean;
@@ -6,15 +7,15 @@ interface AppState {
   userId: string | null;
   activeSpaceId: string | null;
   activeRoomId: string | null;
-  activeCall: any | null;
-  incomingCall: any | null;
+  activeCall: MatrixCall | null;
+  incomingCall: MatrixCall | null;
   isSettingsOpen: boolean;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
   setActiveSpaceId: (id: string | null) => void;
   setActiveRoomId: (id: string | null) => void;
-  setActiveCall: (call: any | null) => void;
-  setIncomingCall: (call: any | null) => void;
+  setActiveCall: (call: MatrixCall | null) => void;
+  setIncomingCall: (call: MatrixCall | null) => void;
   setSettingsOpen: (isOpen: boolean) => void;
 }
 

@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useRoomMembers } from '../../hooks/useRoomMembers';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { cn } from '../../utils/cn';
+import { type RoomMember } from 'matrix-js-sdk';
 
 const MemberList: React.FC = () => {
   const { activeRoomId } = useAppStore();
@@ -15,11 +16,11 @@ const MemberList: React.FC = () => {
   const moderators = members.filter(m => m.powerLevel >= 50 && m.powerLevel < 100);
   const everyone = members.filter(m => m.powerLevel < 50);
 
-  const getAvatar = (member: any) => {
+  const getAvatar = (member: RoomMember) => {
     if (!client || typeof member.getAvatarUrl !== 'function') return null;
     try {
-      return member.getAvatarUrl(client.getHomeserverUrl(), 32, 32, 'crop');
-    } catch (e) {
+      return member.getAvatarUrl(client.getHomeserverUrl(), 32, 32, 'crop', undefined, true);
+    } catch {
       return null;
     }
   };

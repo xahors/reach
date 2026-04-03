@@ -1,18 +1,18 @@
-import { CallEvent } from 'matrix-js-sdk';
+import { CallEvent, type MatrixCall } from 'matrix-js-sdk';
+import { CallErrorCode } from 'matrix-js-sdk/lib/webrtc/call';
+import { CallEventHandlerEvent } from 'matrix-js-sdk/lib/webrtc/callEventHandler';
 import { matrixService } from './matrix';
 import { useAppStore } from '../store/useAppStore';
 
 class CallManager {
-  private currentCall: any | null = null;
+  private currentCall: MatrixCall | null = null;
 
   init() {
     const client = matrixService.getClient();
     if (!client) return;
 
     // In matrix-js-sdk v41, CallEvent.Incoming was renamed/moved.
-    // We use the string literal 'Call.incoming' which corresponds to CallEventHandlerEvent.Incoming.
-    // @ts-expect-error: necessary to bypass SDK type mismatch
-    client.on('Call.incoming', (call: any) => {
+    client.on(CallEventHandlerEvent.Incoming, (call: MatrixCall) => {
       console.log('Incoming call...', call);
       // If we are already in a call, reject the new one
       if (this.currentCall) {
@@ -26,11 +26,11 @@ class CallManager {
       call.on(CallEvent.Hangup, () => {
         this.clearCall();
       });
-      call.on(CallEvent.Error, (err: any) => {
+      call.on(CallEvent.Error, (err) => {
         console.error('Call error', err);
         this.clearCall();
       });
-      call.on(CallEvent.Replaced, (newCall: any) => {
+      call.on(CallEvent.Replaced, (newCall: MatrixCall) => {
         this.currentCall = newCall;
         useAppStore.getState().setActiveCall(newCall);
       });
@@ -51,14 +51,14 @@ class CallManager {
       call.on(CallEvent.Hangup, () => {
         this.clearCall();
       });
-      call.on(CallEvent.Error, (err: any) => {
+      call.on(CallEvent.Error, (err) => {
         console.error('Call error', err);
         this.clearCall();
       });
 
       await call.placeCall(true, type === 'video');
-    } catch (e) {
-      console.error('Error placing call:', e);
+    } catch (err) {
+      console.error('Error placing call:', err);
       this.clearCall();
     }
   }
@@ -80,7 +80,7 @@ class CallManager {
 
   hangupCall() {
     if (this.currentCall) {
-      this.currentCall.hangup('user_hangup', false);
+      this.currentCall.hangup(CallErrorCode.UserHangup, false);
       this.clearCall();
     }
   }

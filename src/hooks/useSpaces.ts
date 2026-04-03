@@ -14,19 +14,21 @@ export const useSpaces = () => {
       try {
         const isSpace = room.isSpaceRoom();
         return isSpace && room.getMyMembership() === 'join';
-      } catch (e) {
+      } catch {
         return false;
       }
     });
-    setSpaces(spaceRooms);
-    setLoading(false);
+    Promise.resolve().then(() => {
+      setSpaces(spaceRooms);
+      setLoading(false);
+    });
   }, [client]);
 
   useEffect(() => {
     if (!client) return;
 
     // Initial load
-    updateSpaces();
+    const timeout = setTimeout(() => updateSpaces(), 0);
 
     // Listen for room changes
     const onSync = (state: string) => {
@@ -40,6 +42,7 @@ export const useSpaces = () => {
     client.on(RoomEvent.MyMembership, updateSpaces);
 
     return () => {
+      clearTimeout(timeout);
       client.removeListener(ClientEvent.Sync, onSync);
       client.removeListener(ClientEvent.Room, updateSpaces);
       client.removeListener(RoomEvent.MyMembership, updateSpaces);

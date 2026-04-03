@@ -9,18 +9,26 @@ export const useSpaceRooms = (spaceId: string | null) => {
 
   const updateRooms = useCallback(() => {
     if (!client || !spaceId) {
-      Promise.resolve().then(() => setRooms([]));
+      Promise.resolve().then(() => {
+        setRooms([]);
+        setLoading(false);
+      });
       return;
     }
 
     const space = client.getRoom(spaceId);
-    if (!space) return;
+    if (!space) {
+      Promise.resolve().then(() => setLoading(false));
+      return;
+    }
 
     // Get children of the space
     const childrenEvents = space.currentState.getStateEvents('m.space.child');
     if (!Array.isArray(childrenEvents)) {
-      Promise.resolve().then(() => setRooms([]));
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setRooms([]);
+        setLoading(false);
+      });
       return;
     }
 
@@ -29,21 +37,29 @@ export const useSpaceRooms = (spaceId: string | null) => {
       .map((event) => event.getStateKey());
 
     const spaceRooms = childRoomIds
-      .map((id) => client.getRoom(id))
+      .map((id) => id ? client.getRoom(id) : null)
       .filter((room): room is Room => room !== null);
 
-    setRooms(spaceRooms);
-    setLoading(false);
+    Promise.resolve().then(() => {
+      setRooms(spaceRooms);
+      setLoading(false);
+    });
   }, [client, spaceId]);
 
   useEffect(() => {
     if (!client || !spaceId) {
-      setRooms([]);
+      Promise.resolve().then(() => {
+        setRooms([]);
+        setLoading(false);
+      });
       return;
     }
 
-    setLoading(true);
-    updateRooms();
+    // Use a small timeout to avoid setState during effect body
+    const initialLoadTimeout = setTimeout(() => {
+      setLoading(true);
+      updateRooms();
+    }, 0);
 
     const onSync = (state: string) => {
       if (state === 'PREPARED' || state === 'SYNCING') {
@@ -56,6 +72,7 @@ export const useSpaceRooms = (spaceId: string | null) => {
     client.on(RoomEvent.MyMembership, updateRooms);
 
     return () => {
+      clearTimeout(initialLoadTimeout);
       client.removeListener(ClientEvent.Sync, onSync);
       client.removeListener(RoomStateEvent.Events, updateRooms);
       client.removeListener(RoomEvent.MyMembership, updateRooms);

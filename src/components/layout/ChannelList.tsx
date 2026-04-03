@@ -14,6 +14,14 @@ const ChannelList: React.FC = () => {
 
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
 
+  React.useEffect(() => {
+    // If we just entered a space, select the first room if none is active
+    if (activeSpaceId && !activeRoomId && !spaceLoading && rooms.length > 0) {
+      const firstRoomId = rooms[0].roomId;
+      Promise.resolve().then(() => setActiveRoomId(firstRoomId));
+    }
+  }, [activeSpaceId, activeRoomId, spaceLoading, rooms, setActiveRoomId]);
+
   const renderUserFooter = () => (
     <div className="flex h-14 items-center bg-[#232428] px-2 py-2 mt-auto">
       <div className="flex flex-1 items-center rounded px-1 transition hover:bg-discord-hover">
@@ -62,7 +70,9 @@ const ChannelList: React.FC = () => {
                   let avatarUrl = null;
                   try {
                     avatarUrl = otherMember?.getAvatarUrl(client!.getHomeserverUrl(), 32, 32, 'crop', undefined, true);
-                  } catch (e) {}
+                  } catch {
+                    // Ignore avatar fetching errors
+                  }
 
                   return (
                     <button

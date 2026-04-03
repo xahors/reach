@@ -20,8 +20,9 @@ const Login: React.FC = () => {
       const client = await matrixService.login(homeserver, username, password);
       setLoggedIn(true, client.getUserId());
       callManager.init();
-    } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Login failed. Please check your credentials.';
+      setError(message);
     } finally {
       setLoading(false);
     }
