@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent } from 'matrix-js-sdk';
+import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, PendingEventOrdering } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
 import { useAppStore } from '../store/useAppStore';
@@ -42,16 +42,20 @@ export const useRoomMessages = (roomId: string | null) => {
     }
 
     // Always check for local echoes if they aren't in the window yet
-    const pending = room.getPendingEvents();
-    if (pending && pending.length > 0) {
-      const eventIds = new Set(events.map(e => e.getId()).filter(Boolean));
-      const txnIds = new Set(events.map(e => e.getTxnId()).filter(Boolean));
+    // BUT only if the room supports Detached pending event ordering, otherwise it throws
+    // @ts-expect-error: internal property access
+    if (room.opts?.pendingEventOrdering === PendingEventOrdering.Detached) {
+      const pending = room.getPendingEvents();
+      if (pending && pending.length > 0) {
+        const eventIds = new Set(events.map(e => e.getId()).filter(Boolean));
+        const txnIds = new Set(events.map(e => e.getTxnId()).filter(Boolean));
 
-      pending.forEach(pe => {
-        if (!eventIds.has(pe.getId()) && !txnIds.has(pe.getTxnId())) {
-          events.push(pe);
-        }
-      });
+        pending.forEach(pe => {
+          if (!eventIds.has(pe.getId()) && !txnIds.has(pe.getTxnId())) {
+            events.push(pe);
+          }
+        });
+      }
     }
 
     return events;
