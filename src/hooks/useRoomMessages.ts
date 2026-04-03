@@ -26,8 +26,8 @@ export const useRoomMessages = (roomId: string | null) => {
     
     const windowEvents = timelineWindow.current?.getEvents() || [];
     
-    // Use the window events if the window has been loaded, otherwise fallback to live timeline
-    if (timelineWindow.current && windowEvents.length > 0) {
+    // Use the window events if the window has been initialized
+    if (timelineWindow.current) {
       events = [...windowEvents];
     } else {
       events = [...room.getLiveTimeline().getEvents()];
@@ -139,10 +139,10 @@ export const useRoomMessages = (roomId: string | null) => {
     const initTimeline = async (targetRoom: Room) => {
       Promise.resolve().then(() => setLoading(true));
       timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
-        windowLimit: 250
+        windowLimit: 500
       });
       try {
-        await timelineWindow.current.load(undefined, 50);
+        await timelineWindow.current.load(undefined, 100);
       } catch (error) {
         console.error('Failed to load timeline:', error);
       } finally {

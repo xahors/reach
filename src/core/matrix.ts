@@ -59,26 +59,23 @@ class MatrixService {
           if (!this.tempRecoveryKey) return null;
           const rawInput = this.tempRecoveryKey.trim();
           const keyId = Object.keys(keys)[0];
-          const keyInfo = keys[keyId];
           
-          console.log(`SDK requested secret key for ID: ${keyId}`, keyInfo);
+          console.log(`SDK requested secret key for ID: ${keyId}`);
 
-          if (keyInfo.passphrase) {
-            console.log("Providing Security Phrase bytes to SDK.");
-            return [keyId, new TextEncoder().encode(rawInput)];
-          }
-
-          if (rawInput.startsWith('E')) {
+          // If rawInput starts with 'E' and is long, it's likely a recovery key
+          if (rawInput.startsWith('E') && rawInput.length > 40) {
             try {
               const { decodeRecoveryKey } = await import("matrix-js-sdk/lib/crypto-api/recovery-key.js");
               const decoded = decodeRecoveryKey(rawInput);
               console.log("Providing decoded Recovery Key bytes to SDK.");
               return [keyId, decoded];
             } catch (e) {
-              console.warn("Decoding recovery key failed:", e);
+              console.warn("Decoding recovery key failed, falling back to raw bytes:", e);
             }
           }
 
+          // Otherwise treat as security phrase (passphrase)
+          console.log("Providing Security Phrase bytes to SDK.");
           return [keyId, new TextEncoder().encode(rawInput)];
         }
       }
