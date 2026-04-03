@@ -5,6 +5,7 @@ import { useDirectMessages } from '../../hooks/useDirectMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { cn } from '../../utils/cn';
 import { Hash, ChevronDown, Plus, Settings } from 'lucide-react';
+import { callManager } from '../../core/callManager';
 
 const ChannelList: React.FC = () => {
   const { activeSpaceId, activeRoomId, setActiveRoomId, setSettingsOpen } = useAppStore();
@@ -28,6 +29,11 @@ const ChannelList: React.FC = () => {
     }
   }, [activeSpaceId, spaceLoading, rooms, setActiveRoomId]);
 
+  const handleRoomClick = (roomId: string) => {
+    callManager.warmupAudioContext();
+    setActiveRoomId(roomId);
+  };
+
   const renderUserFooter = () => (
     <div className="flex h-14 items-center bg-[#232428] px-2 py-2 mt-auto">
       <div className="flex flex-1 items-center rounded px-1 transition hover:bg-discord-hover">
@@ -46,7 +52,7 @@ const ChannelList: React.FC = () => {
       </div>
       <div className="flex items-center space-x-1">
         <button 
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => { callManager.warmupAudioContext(); setSettingsOpen(true); }}
           className="rounded p-1 text-discord-text hover:bg-discord-hover hover:text-white transition"
           title="User Settings"
         >
@@ -83,7 +89,7 @@ const ChannelList: React.FC = () => {
                   return (
                     <button
                       key={room.roomId}
-                      onClick={() => setActiveRoomId(room.roomId)}
+                      onClick={() => handleRoomClick(room.roomId)}
                       className={cn(
                         "group flex w-full items-center rounded px-2 py-1.5 transition",
                         activeRoomId === room.roomId
@@ -137,7 +143,7 @@ const ChannelList: React.FC = () => {
               rooms.map((room) => (
                 <button
                   key={room.roomId}
-                  onClick={() => setActiveRoomId(room.roomId)}
+                  onClick={() => handleRoomClick(room.roomId)}
                   className={cn(
                     "group flex w-full items-center rounded px-2 py-1.5 transition",
                     activeRoomId === room.roomId

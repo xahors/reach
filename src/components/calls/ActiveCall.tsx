@@ -2,8 +2,66 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { callManager } from '../../core/callManager';
 import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, GripHorizontal, Minus } from 'lucide-react';
-import { CallEvent } from 'matrix-js-sdk';
+import { CallEvent, type MatrixCall } from 'matrix-js-sdk';
 import Draggable from 'react-draggable';
+
+const MicActivityIndicator: React.FC<{ call: MatrixCall | null, isLocal?: boolean }> = ({ call, isLocal }) => {
+  const [level, setLevel] = useState(0);
+  const requestRef = useRef<number>(0);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
+  useEffect(() => {
+    if (!call) return;
+
+    const stream = isLocal ? call.localUsermediaStream : call.remoteUsermediaStream;
+    if (!stream || stream.getAudioTracks().length === 0) {
+      Promise.resolve().then(() => setLevel(0));
+      return;
+    }
+
+    try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioCtx = new AudioContextClass();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const update = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        setLevel(Math.min(average / 128, 1));
+        requestRef.current = requestAnimationFrame(update);
+      };
+
+      update();
+
+      return () => {
+        cancelAnimationFrame(requestRef.current);
+        audioCtx.close().catch(() => {});
+      };
+    } catch (e) {
+      console.warn('Mic indicator failed', e);
+    }
+  }, [call, isLocal]);
+
+  return (
+    <div className="h-1 w-full bg-discord-black rounded-full overflow-hidden mt-1">
+      <div 
+        className="h-full bg-green-500 transition-all duration-75" 
+        style={{ width: `${level * 100}%`, opacity: level > 0.1 ? 1 : 0.3 }}
+      />
+    </div>
+  );
+};
 
 const ActiveCall: React.FC = () => {
   const { 
@@ -84,6 +142,7 @@ const ActiveCall: React.FC = () => {
 
   const toggleMute = () => {
     if (activeCall) {
+      callManager.warmupAudioContext();
       const newMuted = !isMuted;
       callManager.setMuted(newMuted);
       setMuted(newMuted);
@@ -92,6 +151,7 @@ const ActiveCall: React.FC = () => {
 
   const toggleCamera = () => {
     if (activeCall) {
+      callManager.warmupAudioContext();
       const newCameraOff = !isCameraOff;
       callManager.setVideoMuted(newCameraOff);
       setCameraOff(newCameraOff);
@@ -115,7 +175,7 @@ const ActiveCall: React.FC = () => {
             <p className="text-discord-text-muted text-sm mb-4">From: {incomingCall.roomId}</p>
             <div className="flex space-x-2">
               <button 
-                onClick={(e) => { e.stopPropagation(); callManager.acceptCall(); }}
+                onClick={(e) => { e.stopPropagation(); callManager.warmupAudioContext(); callManager.acceptCall(); }}
                 className="flex-1 flex items-center justify-center bg-green-500 hover:bg-green-600 text-white py-2 rounded font-bold transition"
               >
                 <Phone className="h-4 w-4 mr-2" /> Answer
@@ -144,7 +204,7 @@ const ActiveCall: React.FC = () => {
             
             <div className="flex justify-between items-center mb-4">
                <div className="flex items-center space-x-2">
-                 <h3 className="text-white font-bold text-sm">Active Call: {callState}</h3>
+                 <h3 className="text-white font-bold text-sm uppercase">Active Call: {callState}</h3>
                  <button 
                    onClick={() => setCallMinimized(true)}
                    className="rounded p-1 hover:bg-discord-hover text-discord-text-muted hover:text-white transition"
@@ -156,6 +216,11 @@ const ActiveCall: React.FC = () => {
                <span className="text-xs text-discord-text-muted animate-pulse">{!isCameraOff ? 'Video' : 'Voice'}</span>
             </div>
             
+            <div className="mb-4">
+              <div className="text-[10px] text-discord-text-muted mb-1 font-bold uppercase">Local Mic Activity</div>
+              <MicActivityIndicator call={activeCall} isLocal={true} />
+            </div>
+
             {/* Video Area */}
             <div className={`relative mb-4 bg-black rounded overflow-hidden transition-all duration-300 ${!isCameraOff ? 'h-48' : 'h-0 opacity-0 mb-0'}`}>
               <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />

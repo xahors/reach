@@ -25,6 +25,21 @@ class CallManager {
     });
   }
 
+  // Call this on ANY user interaction to unblock audio beeps
+  warmupAudioContext() {
+    try {
+      if (!this.audioContext) {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.audioContext = new AudioContextClass();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+    } catch (e) {
+      console.warn('Audio warmup failed', e);
+    }
+  }
+
   private setupCallListeners(call: MatrixCall) {
     call.on(CallEvent.Hangup, () => {
       this.clearCall();
@@ -39,75 +54,57 @@ class CallManager {
       this.setupCallListeners(newCall);
     });
     call.on(CallEvent.State, (state) => {
-      console.log(`Call state changed: ${state}`);
+      console.log(`Call state: ${state}`);
       if (state === 'connected') {
         this.playFeedbackSound('connect');
       }
     });
   }
 
-  private getAudioContext(): AudioContext | null {
-    try {
-      if (!this.audioContext) {
-        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        this.audioContext = new AudioContextClass();
-      }
-      
-      if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume().catch(console.warn);
-      }
-      
-      return this.audioContext;
-    } catch (e) {
-      console.warn('Failed to get AudioContext', e);
-      return null;
-    }
-  }
-
   private playFeedbackSound(type: 'mute' | 'unmute' | 'connect' | 'place') {
-    const context = this.getAudioContext();
-    if (!context) return;
+    this.warmupAudioContext();
+    if (!this.audioContext) return;
 
     try {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
+      const oscillator = this.audioContext.createOscillator();
+      const gain = this.audioContext.createGain();
 
       oscillator.type = 'sine';
       
       let startFreq = 440;
       let endFreq = 880;
-      let duration = 0.1;
+      let duration = 0.12;
 
       if (type === 'mute') {
-        startFreq = 600;
-        endFreq = 400;
+        startFreq = 660;
+        endFreq = 440;
       } else if (type === 'unmute') {
-        startFreq = 400;
-        endFreq = 600;
+        startFreq = 440;
+        endFreq = 660;
       } else if (type === 'connect') {
-        startFreq = 500;
-        endFreq = 900;
+        startFreq = 523.25; // C5
+        endFreq = 783.99; // G5
         duration = 0.2;
       } else if (type === 'place') {
-        startFreq = 400;
-        endFreq = 500;
+        startFreq = 392.00; // G4
+        endFreq = 523.25; // C5
         duration = 0.15;
       }
 
-      const now = context.currentTime;
+      const now = this.audioContext.currentTime;
       oscillator.frequency.setValueAtTime(startFreq, now);
       oscillator.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
 
-      gain.gain.setValueAtTime(0.1, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
       oscillator.connect(gain);
-      gain.connect(context.destination);
+      gain.connect(this.audioContext.destination);
 
       oscillator.start(now);
       oscillator.stop(now + duration);
     } catch (e) {
-      console.warn('Audio play failed', e);
+      console.warn('Feedback sound failed', e);
     }
   }
 
@@ -115,7 +112,6 @@ class CallManager {
     const client = matrixService.getClient();
     if (!client) return;
 
-    // Trigger sound on user gesture
     this.playFeedbackSound('place');
 
     try {
@@ -133,7 +129,7 @@ class CallManager {
 
       this.setupCallListeners(call);
       
-      // Request initial permissions
+      // Request audio immediately. If video, also request video.
       await call.placeCall(true, type === 'video');
     } catch (err) {
       console.error('Error placing call:', err);
@@ -173,8 +169,8 @@ class CallManager {
 
   setVideoMuted(muted: boolean) {
     if (this.currentCall) {
-      // If we are enabling video, but the call doesn't have a video track yet,
-      // calling setLocalVideoMuted(false) should trigger the browser prompt.
+      // In JS SDK, unmuting video when no track exists might not trigger permission.
+      // Explicitly check and use setLocalVideoMuted.
       this.currentCall.setLocalVideoMuted(muted);
       this.playFeedbackSound(muted ? 'mute' : 'unmute');
     }
