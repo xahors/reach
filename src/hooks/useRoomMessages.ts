@@ -15,6 +15,7 @@ export const useRoomMessages = (roomId: string | null) => {
   
   // Track last sent receipt to avoid infinite loops/spam
   const lastSentReceiptIdRef = useRef<string | null>(null);
+  const lastReceiptTimeRef = useRef<number>(0);
   
   // Keep track of current room to manage listeners
   const currentRoomRef = useRef<Room | null>(null);
@@ -91,18 +92,16 @@ export const useRoomMessages = (roomId: string | null) => {
     const room = client.getRoom(roomId);
     currentRoomRef.current = room;
 
-    // Use a small timeout to avoid setState during effect body
-    const initialLoadTimeout = setTimeout(() => refreshMessages(), 0);
-
     const onTimelineEvent = (_event: MatrixEvent, evRoom: Room | undefined) => {
       if (evRoom?.roomId === roomId) {
-        // We still try to advance the window in the background to keep it updated
-        if (timelineWindow.current) {
+        // Only paginate forward if we are already at the end of the window
+        // to avoid jumping or unnecessary network requests
+        if (timelineWindow.current && !timelineWindow.current.canPaginate(Direction.Forward)) {
           timelineWindow.current.paginate(Direction.Forward, 10).catch(() => {});
         }
         
-        // Use a small timeout to ensure SDK has finished processing and live timeline is updated
-        setTimeout(() => refreshMessages(), 0);
+        // Use a small timeout to ensure SDK has finished processing
+        setTimeout(() => refreshMessages(), 50);
       }
     };
 
@@ -112,24 +111,16 @@ export const useRoomMessages = (roomId: string | null) => {
       }
     };
 
-    const onEventStatus = (event: MatrixEvent) => {
-      if (event.getRoomId() === roomId) {
-        refreshMessages();
-      }
-    };
-
     const onSync = (state: string) => {
+      // Only trigger initial load if room wasn't available before
       if (state === 'PREPARED' || state === 'SYNCING') {
-         if (!currentRoomRef.current) {
-           const r = client.getRoom(roomId);
-           if (r) {
-             currentRoomRef.current = r;
-             r.on(RoomEvent.Timeline, onTimelineEvent);
-             r.on(RoomEvent.LocalEchoUpdated, refreshMessages);
-             initTimeline(r);
-           }
+         const r = client.getRoom(roomId);
+         if (r && !currentRoomRef.current) {
+           currentRoomRef.current = r;
+           r.on(RoomEvent.Timeline, onTimelineEvent);
+           r.on(RoomEvent.LocalEchoUpdated, refreshMessages);
+           initTimeline(r);
          }
-         refreshMessages();
       }
     };
 
@@ -145,48 +136,42 @@ export const useRoomMessages = (roomId: string | null) => {
     const initTimeline = async (targetRoom: Room) => {
       Promise.resolve().then(() => setLoading(true));
       
-      // Reset receipt tracker for new room
       lastSentReceiptIdRef.current = null;
+      lastReceiptTimeRef.current = 0;
 
-      // Create a fresh window for this room
       timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
         windowLimit: 1000
       });
 
       try {
         if (messageLoadPolicy === 'latest') {
-          // Find the last known event in the live timeline to anchor the window
           const liveEvents = targetRoom.getLiveTimeline().getEvents();
           const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
           
           await timelineWindow.current.load(lastEventId, 50);
           
-          // Ensure we are truly at the end, but limit attempts to avoid infinite loops
+          // Limit pagination attempts to prevent spam
           let forwardAttempts = 0;
-          while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 5) {
+          while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 3) {
             await timelineWindow.current.paginate(Direction.Forward, 50);
             forwardAttempts++;
           }
         } else {
-          // Load around the last read receipt
           const myUserId = client.getUserId();
           const readReceipt = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
           
           if (readReceipt) {
             await timelineWindow.current.load(readReceipt, 50);
-            
-            // Fetch a bit of forward context
             if (timelineWindow.current.canPaginate(Direction.Forward)) {
               await timelineWindow.current.paginate(Direction.Forward, 25);
             }
           } else {
-            // Fallback to latest
             const liveEvents = targetRoom.getLiveTimeline().getEvents();
             const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
             await timelineWindow.current.load(lastEventId, 50);
             
             let forwardAttempts = 0;
-            while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 5) {
+            while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 3) {
               await timelineWindow.current.paginate(Direction.Forward, 50);
               forwardAttempts++;
             }
@@ -203,26 +188,19 @@ export const useRoomMessages = (roomId: string | null) => {
     // Global client listeners
     client.on(RoomEvent.Timeline, onTimelineEvent);
     client.on(MatrixEventEvent.Decrypted, onEventDecrypted);
-    // @ts-expect-error: internal event
-    client.on('Event.status', onEventStatus);
     client.on(ClientEvent.Sync, onSync);
-    client.on(ClientEvent.Room, onRoom); // Retry room lookup when new rooms arrive
+    client.on(ClientEvent.Room, onRoom);
 
     // Room specific listeners
     if (room) {
       room.on(RoomEvent.Timeline, onTimelineEvent);
       room.on(RoomEvent.LocalEchoUpdated, refreshMessages);
       initTimeline(room);
-    } else {
-      refreshMessages();
     }
 
     return () => {
-      clearTimeout(initialLoadTimeout);
       client.removeListener(RoomEvent.Timeline, onTimelineEvent);
       client.removeListener(MatrixEventEvent.Decrypted, onEventDecrypted);
-      // @ts-expect-error: internal event
-      client.removeListener('Event.status', onEventStatus);
       client.removeListener(ClientEvent.Sync, onSync);
       client.removeListener(ClientEvent.Room, onRoom);
       
@@ -272,7 +250,6 @@ export const useRoomMessages = (roomId: string | null) => {
     try {
       for (const event of eventsToRedact) {
         await client.redactEvent(roomId, event.getId()!);
-        // Small delay to avoid hitting rate limits too hard
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       refreshMessages();
@@ -284,24 +261,26 @@ export const useRoomMessages = (roomId: string | null) => {
   }, [client, roomId, refreshMessages]);
 
   const markAsRead = useCallback(async () => {
-    if (!client || !roomId || messages.length === 0) return;
+    if (!client || !roomId || messages.length === 0 || loading) return;
+    
     const lastMessage = messages[messages.length - 1];
     const eventId = lastMessage.getId();
     
     if (!eventId || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
     
-    // Only send if it's a new event ID
-    if (eventId === lastSentReceiptIdRef.current) return;
+    // Only send if it's a new event ID AND we haven't sent one in the last 2 seconds
+    const now = Date.now();
+    if (eventId === lastSentReceiptIdRef.current || (now - lastReceiptTimeRef.current < 2000)) return;
 
     try {
       lastSentReceiptIdRef.current = eventId;
+      lastReceiptTimeRef.current = now;
       await client.sendReadReceipt(lastMessage);
     } catch (error) {
       console.error('Failed to send read receipt:', error);
-      // Reset on failure so we can try again
       lastSentReceiptIdRef.current = null;
     }
-  }, [client, roomId, messages]);
+  }, [client, roomId, messages, loading]);
 
   return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead };
 };
