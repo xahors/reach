@@ -3,7 +3,7 @@ import { MsgType } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
 import { matrixService } from '../../core/matrix';
-import { PlusCircle, Gift, StickyNote, Smile, ShieldAlert } from 'lucide-react';
+import { PlusCircle, Gift, StickyNote, Smile, ShieldAlert, X, Reply, Pencil } from 'lucide-react';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
 
 interface ChatInputProps {
@@ -16,10 +16,33 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const client = useMatrixClient();
-  const { setSettingsOpen } = useAppStore();
+  const { 
+    setSettingsOpen, 
+    editingEvent, 
+    setEditingEvent, 
+    replyingToEvent, 
+    setReplyingToEvent 
+  } = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingEvent) {
+      const body = editingEvent.getClearContent()?.body || editingEvent.getContent().body;
+      setMessage(body);
+      inputRef.current?.focus();
+    } else {
+      setMessage('');
+    }
+  }, [editingEvent]);
+
+  useEffect(() => {
+    if (replyingToEvent) {
+      inputRef.current?.focus();
+    }
+  }, [replyingToEvent]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -38,19 +61,44 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     e.preventDefault();
     if (!message.trim() || !client) return;
 
+    const content = message.trim();
+    setMessage('');
     setError(null);
     setShowEmojiPicker(false);
+
     try {
-      await client.sendMessage(roomId, {
-        msgtype: MsgType.Text,
-        body: message.trim(),
-      });
-      setMessage('');
+      if (editingEvent) {
+        const originalEventId = editingEvent.getId();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const editContent: any = {
+          msgtype: MsgType.Text,
+          body: ` * ${content}`,
+          "m.new_content": {
+            msgtype: MsgType.Text,
+            body: content,
+          },
+          "m.relates_to": {
+            rel_type: "m.replace",
+            event_id: originalEventId,
+          },
+        };
+        await client.sendMessage(roomId, editContent);
+        setEditingEvent(null);
+      } else if (replyingToEvent) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (client as any).replyEvent(roomId, replyingToEvent, content, content);
+        setReplyingToEvent(null);
+      } else {
+        await client.sendMessage(roomId, {
+          msgtype: MsgType.Text,
+          body: content,
+        });
+      }
     } catch (err) {
       console.error('Failed to send message:', err);
+      setMessage(content);
       
       const messageStr = err instanceof Error ? err.message : '';
-      // Check if it's an encryption error
       if (messageStr.includes('encryption') || !matrixService.isCryptoEnabled()) {
         setError('Encryption required. Please verify your session.');
       } else {
@@ -67,7 +115,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     setError(null);
 
     try {
-      // 1. Upload the file
       const result = await client.uploadContent(file, {
         name: file.name,
         type: file.type,
@@ -77,8 +124,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
 
-      // 2. Send the message with the mxc URL
-      await client.sendMessage(roomId, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mediaContent: any = {
         msgtype: isImage ? MsgType.Image : isVideo ? MsgType.Video : MsgType.File,
         body: file.name,
         url: mxcUrl,
@@ -86,7 +133,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           mimetype: file.type,
           size: file.size,
         }
-      } as any);
+      };
+      await client.sendMessage(roomId, mediaContent);
     } catch (err) {
       console.error('File upload failed:', err);
       setError('Failed to upload file. Please try again.');
@@ -101,7 +149,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   };
 
   return (
-    <div className="px-4 pb-6 relative">
+    <div className="px-4 pb-6 relative flex flex-col">
       <input 
         type="file" 
         ref={fileInputRef}
@@ -109,6 +157,35 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         className="hidden"
         accept="image/*,video/*"
       />
+
+      {/* Reply/Edit Context Bar */}
+      {(editingEvent || replyingToEvent) && (
+        <div className="mb-0 flex items-center justify-between rounded-t-lg bg-[#2b2d31] px-4 py-2 text-xs border-b border-discord-hover">
+          <div className="flex items-center text-discord-text-muted truncate">
+            {editingEvent ? (
+              <>
+                <Pencil className="mr-2 h-3 w-3" />
+                <span className="mr-1">Editing message</span>
+              </>
+            ) : (
+              <>
+                <Reply className="mr-2 h-3 w-3" />
+                <span className="mr-1">Replying to</span>
+                <span className="font-bold text-white truncate">{replyingToEvent?.sender?.name || replyingToEvent?.getSender()}</span>
+              </>
+            )}
+          </div>
+          <button 
+            onClick={() => {
+              setEditingEvent(null);
+              setReplyingToEvent(null);
+            }}
+            className="rounded-full bg-discord-nav p-0.5 hover:bg-discord-hover transition"
+          >
+            <X className="h-3 w-3 text-discord-text" />
+          </button>
+        </div>
+      )}
 
       {showEmojiPicker && (
         <div 
@@ -139,7 +216,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
       )}
       <form
         onSubmit={handleSend}
-        className="flex items-center rounded-lg bg-[#383a40] px-4 py-2.5 shadow-sm"
+        className={`flex items-center bg-[#383a40] px-4 py-2.5 shadow-sm ${editingEvent || replyingToEvent ? 'rounded-b-lg' : 'rounded-lg'}`}
       >
         <button 
           type="button" 
@@ -152,6 +229,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
 
         <input
           type="text"
+          ref={inputRef}
           value={message}
           onChange={(e) => {
             setMessage(e.target.value);

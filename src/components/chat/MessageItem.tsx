@@ -1,6 +1,8 @@
 import React from 'react';
 import { MatrixEvent, EventStatus } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
+import { useAppStore } from '../../store/useAppStore';
+import { Reply, Pencil, Trash2 } from 'lucide-react';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -9,11 +11,14 @@ interface MessageItemProps {
 
 const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   const client = useMatrixClient();
+  const { setEditingEvent, setReplyingToEvent, userId } = useAppStore();
   const sender = event.sender;
   const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const status = event.status;
   const isSending = status === EventStatus.SENDING || status === EventStatus.QUEUED;
   const isFailed = status === EventStatus.NOT_SENT;
+  const isRedacted = event.isRedacted();
+  const isMe = event.getSender() === userId;
 
   const getAvatar = () => {
     if (!client || !sender || typeof sender.getAvatarUrl !== 'function') return null;
@@ -24,8 +29,17 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
     }
   };
 
-  let content: React.ReactNode = event.getContent().body;
-  
+  const handleRedact = async () => {
+    if (!client || !event.getRoomId()) return;
+    if (window.confirm('Are you sure you want to delete this message?')) {
+      try {
+        await client.redactEvent(event.getRoomId()!, event.getId()!);
+      } catch (err) {
+        console.error('Failed to redact event:', err);
+      }
+    }
+  };
+
   const renderMedia = () => {
     const msgtype = event.getContent().msgtype;
     const url = event.getContent().url;
@@ -33,8 +47,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
 
     const httpUrl = client.mxcUrlToHttp(url, 400, 400, 'scale', false, true);
     if (!httpUrl) return null;
-
-    if (msgtype === EventStatus.NOT_SENT) return null; // Fallback
 
     if (msgtype === 'm.image') {
       return (
@@ -66,14 +78,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
         href={httpUrl} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="mt-2 flex items-center rounded bg-discord-sidebar p-2 text-discord-accent hover:underline"
+        className="mt-2 flex items-center rounded bg-discord-sidebar p-2 text-discord-accent hover:underline w-fit"
       >
-        <span>📄 {event.getContent().body || 'Download File'}</span>
+        <span className="truncate max-w-xs text-xs">📄 {event.getContent().body || 'Download File'}</span>
       </a>
     );
   };
 
-  if (event.isEncrypted()) {
+  let content: React.ReactNode = event.getContent().body;
+  
+  if (isRedacted) {
+    content = <span className="italic text-discord-text-muted">This message was deleted.</span>;
+  } else if (event.isEncrypted()) {
     const clear = event.getClearContent();
     if (clear && clear.body) {
       content = clear.body;
@@ -96,18 +112,52 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
     }
   }
 
-  const media = renderMedia();
+  const media = isRedacted ? null : renderMedia();
+
+  const renderActions = () => {
+    if (isRedacted || isSending || isFailed) return null;
+    return (
+      <div className="absolute -top-4 right-4 flex items-center rounded border border-discord-hover bg-discord-sidebar shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 overflow-hidden">
+        <button 
+          onClick={() => setReplyingToEvent(event)}
+          className="p-1.5 text-discord-text-muted hover:bg-discord-hover hover:text-white transition"
+          title="Reply"
+        >
+          <Reply className="h-4 w-4" />
+        </button>
+        {isMe && event.getType() === 'm.room.message' && (
+          <button 
+            onClick={() => setEditingEvent(event)}
+            className="p-1.5 text-discord-text-muted hover:bg-discord-hover hover:text-white transition"
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+        {isMe && (
+          <button 
+            onClick={handleRedact}
+            className="p-1.5 text-red-400 hover:bg-discord-hover hover:text-red-500 transition"
+            title="Delete"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   if (isGrouped) {
     return (
       <div className={`group relative -mt-0.5 flex items-center px-4 py-0.5 hover:bg-[#2e3035] ${isSending ? 'opacity-50' : ''} ${isFailed ? 'text-red-500' : ''}`}>
+        {renderActions()}
         <div className="absolute left-0 top-0 flex h-full w-14 items-center justify-center opacity-0 group-hover:opacity-100">
            <span className="text-[10px] text-discord-text-muted">{timestamp}</span>
         </div>
         <div className="ml-10 flex flex-col text-base text-discord-text">
-          {content}
+          <div className="flex-1">{content}</div>
           {media}
-          {isFailed && <span className="mt-1 text-[10px] font-bold uppercase">Sending Failed</span>}
+          {isFailed && <span className="mt-1 text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
         </div>
       </div>
     );
@@ -116,10 +166,11 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   const avatarUrl = getAvatar();
 
   return (
-    <div className={`group mt-4 flex px-4 py-1 hover:bg-[#2e3035] ${isSending ? 'opacity-50' : ''}`}>
+    <div className={`group relative mt-4 flex px-4 py-1 hover:bg-[#2e3035] ${isSending ? 'opacity-50' : ''}`}>
+      {renderActions()}
       <div className="mr-4 mt-0.5 h-10 w-10 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-white font-bold overflow-hidden">
         {avatarUrl ? (
-          <img src={avatarUrl || ''} alt="" className="h-full w-full object-cover" />
+          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
         ) : (
           sender?.name?.charAt(0).toUpperCase() || '?'
         )}
@@ -133,7 +184,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
           {isFailed && <span className="text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
         </div>
         <div className={`text-base text-discord-text ${isFailed ? 'text-red-400' : ''}`}>
-          {content}
+          <div>{content}</div>
           {media}
         </div>
       </div>
