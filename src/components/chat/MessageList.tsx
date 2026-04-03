@@ -29,6 +29,7 @@ const MessageList: React.FC<MessageListProps> = ({
   const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
 
   const scrollToBottom = useCallback((smooth = false) => {
     if (scrollRef.current) {
@@ -46,6 +47,18 @@ const MessageList: React.FC<MessageListProps> = ({
       return true;
     }
     return false;
+  }, []);
+
+  const jumpToMessage = useCallback((eventId: string) => {
+    const element = document.getElementById(`message-${eventId}`);
+    if (element) {
+      element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setHighlightedEventId(eventId);
+      setTimeout(() => setHighlightedEventId(null), 2000);
+    } else {
+      console.warn(`Message ${eventId} not found in DOM`);
+      // Future: If not found, we could try to paginate until found
+    }
   }, []);
 
   // 1. Safety fallback: Ensure we eventually show the UI even if messages are empty/slow
@@ -80,7 +93,6 @@ const MessageList: React.FC<MessageListProps> = ({
             const timer = setTimeout(() => setIsReady(true), 300);
             return () => clearTimeout(timer);
           } else {
-            // If marker not in current window, maybe fallback to bottom or stay at top
             const timer = setTimeout(() => setIsReady(true), 500);
             return () => clearTimeout(timer);
           }
@@ -141,8 +153,8 @@ const MessageList: React.FC<MessageListProps> = ({
       const eventId = event.getId();
       
       const isReadMarker = readMarkerId && eventId === readMarkerId;
-      // Only show the bar if there are actual new messages below it
       const hasNewMessagesBelow = isReadMarker && index < messages.length - 1;
+      const isHighlighted = eventId && eventId === highlightedEventId;
       
       let isGrouped = false;
       if (prevEvent) {
@@ -158,8 +170,17 @@ const MessageList: React.FC<MessageListProps> = ({
       }
 
       groupedMessages.push(
-        <div key={eventId || event.getTxnId()} ref={isReadMarker ? readMarkerRef : null}>
-          <MessageItem event={event} isGrouped={isGrouped} />
+        <div 
+          key={eventId || event.getTxnId()} 
+          id={eventId ? `message-${eventId}` : undefined}
+          ref={isReadMarker ? readMarkerRef : null}
+          className={`transition-colors duration-1000 ${isHighlighted ? 'bg-discord-accent/20' : ''}`}
+        >
+          <MessageItem 
+            event={event} 
+            isGrouped={isGrouped} 
+            onJumpToReply={(replyId) => jumpToMessage(replyId)}
+          />
           {hasNewMessagesBelow && (
             <div className="flex items-center px-4 py-2">
               <div className="h-px flex-1 bg-discord-accent opacity-50" />

@@ -7,9 +7,10 @@ import { Reply, Pencil, Trash2 } from 'lucide-react';
 interface MessageItemProps {
   event: MatrixEvent;
   isGrouped?: boolean;
+  onJumpToReply?: (replyId: string) => void;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToReply }) => {
   const client = useMatrixClient();
   const { setEditingEvent, setReplyingToEvent, userId } = useAppStore();
   const sender = event.sender;
@@ -106,12 +107,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   };
 
   const renderReply = () => {
-    if (!repliedToEvent) return null;
+    if (!repliedToEvent || !replyEventId) return null;
     const replySender = repliedToEvent.sender;
     const replyContent = repliedToEvent.getClearContent()?.body || repliedToEvent.getContent().body;
     
     return (
-      <div className="mb-1 flex items-center space-x-2 opacity-60 hover:opacity-100 transition cursor-pointer overflow-hidden max-w-full">
+      <div 
+        onClick={(e) => {
+          e.stopPropagation();
+          onJumpToReply?.(replyEventId);
+        }}
+        className="mb-1 flex items-center space-x-2 opacity-60 hover:opacity-100 transition cursor-pointer overflow-hidden max-w-full group/reply"
+      >
         <div className="h-4 w-4 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-[8px] text-white font-bold overflow-hidden">
           {replySender?.getAvatarUrl(client!.getHomeserverUrl(), 16, 16, 'crop', undefined, true) ? (
             <img src={replySender.getAvatarUrl(client!.getHomeserverUrl(), 16, 16, 'crop', undefined, true)!} alt="" className="h-full w-full object-cover" />
@@ -119,7 +126,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
             replySender?.name?.charAt(0).toUpperCase() || '?'
           )}
         </div>
-        <span className="text-xs font-bold text-white shrink-0">@{replySender?.name || replySender?.userId}</span>
+        <span className="text-xs font-bold text-white shrink-0 group-hover/reply:underline">@{replySender?.name || replySender?.userId}</span>
         <span className="truncate text-xs text-discord-text-muted italic">{replyContent}</span>
       </div>
     );
