@@ -5,7 +5,7 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
-import { Hash, Phone, Video, Bell, Pin, Users, Search, HelpCircle, Mic, PhoneOff } from 'lucide-react';
+import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 
 const ChatArea: React.FC = () => {
@@ -15,7 +15,11 @@ const ChatArea: React.FC = () => {
     setChannelDetailsOpen, 
     isCallMinimized, 
     setCallMinimized, 
-    activeCall 
+    activeCall,
+    isMuted,
+    setMuted,
+    isCameraOff,
+    setCameraOff
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
@@ -26,6 +30,24 @@ const ChatArea: React.FC = () => {
   const handleCall = (type: 'voice' | 'video') => {
     if (activeRoomId) {
       callManager.placeCall(activeRoomId, type);
+    }
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (activeCall) {
+      const newMuted = !isMuted;
+      callManager.setMuted(newMuted);
+      setMuted(newMuted);
+    }
+  };
+
+  const toggleCamera = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (activeCall) {
+      const newCameraOff = !isCameraOff;
+      callManager.setVideoMuted(newCameraOff);
+      setCameraOff(newCameraOff);
     }
   };
 
@@ -58,12 +80,21 @@ const ChatArea: React.FC = () => {
               
               <div className="flex items-center space-x-2 border-l border-discord-accent/30 pl-3">
                 <button 
-                  onClick={(e) => { e.stopPropagation(); /* Mute logic would be integrated here */ }}
-                  className="rounded p-1 hover:bg-discord-accent/40 text-white transition"
-                  title="Mute"
+                  onClick={toggleMute}
+                  className={`rounded p-1 transition ${isMuted ? 'text-red-500 hover:bg-red-500/20' : 'text-white hover:bg-discord-accent/40'}`}
+                  title={isMuted ? "Unmute" : "Mute"}
                 >
-                  <Mic className="h-3 w-3" />
+                  {isMuted ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
                 </button>
+                
+                <button 
+                  onClick={toggleCamera}
+                  className={`rounded p-1 transition ${!isCameraOff ? 'text-discord-accent hover:bg-discord-accent/20' : 'text-white hover:bg-discord-accent/40'}`}
+                  title={!isCameraOff ? "Turn Camera Off" : "Turn Camera On"}
+                >
+                  {!isCameraOff ? <Video className="h-3 w-3" /> : <VideoOff className="h-3 w-3" />}
+                </button>
+
                 <button 
                   onClick={(e) => { e.stopPropagation(); callManager.hangupCall(); }}
                   className="rounded p-1 hover:bg-red-500 text-white transition"

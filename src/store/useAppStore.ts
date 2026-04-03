@@ -12,6 +12,8 @@ interface AppState {
   isSettingsOpen: boolean;
   isChannelDetailsOpen: boolean;
   isCallMinimized: boolean;
+  isMuted: boolean;
+  isCameraOff: boolean;
   messageLoadPolicy: 'latest' | 'last_read';
   editingEvent: MatrixEvent | null;
   replyingToEvent: MatrixEvent | null;
@@ -24,6 +26,8 @@ interface AppState {
   setSettingsOpen: (isOpen: boolean) => void;
   setChannelDetailsOpen: (isOpen: boolean) => void;
   setCallMinimized: (isMinimized: boolean) => void;
+  setMuted: (isMuted: boolean) => void;
+  setCameraOff: (isCameraOff: boolean) => void;
   setMessageLoadPolicy: (policy: 'latest' | 'last_read') => void;
   setEditingEvent: (event: MatrixEvent | null) => void;
   setReplyingToEvent: (event: MatrixEvent | null) => void;
@@ -40,6 +44,8 @@ export const useAppStore = create<AppState>((set) => ({
   isSettingsOpen: false,
   isChannelDetailsOpen: false,
   isCallMinimized: false,
+  isMuted: false,
+  isCameraOff: true,
   messageLoadPolicy: (localStorage.getItem('reach_message_load_policy') as 'latest' | 'last_read') || 'last_read',
   editingEvent: null,
   replyingToEvent: null,
@@ -47,11 +53,13 @@ export const useAppStore = create<AppState>((set) => ({
   setSynced: (isSynced) => set({ isSynced }),
   setActiveSpaceId: (id) => set({ activeSpaceId: id }),
   setActiveRoomId: (id) => set({ activeRoomId: id }),
-  setActiveCall: (call) => set({ activeCall: call, isCallMinimized: false }),
+  setActiveCall: (call) => set({ activeCall: call, isCallMinimized: false, isMuted: false, isCameraOff: true }),
   setIncomingCall: (call) => set({ incomingCall: call }),
   setSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
   setChannelDetailsOpen: (isOpen) => set({ isChannelDetailsOpen: isOpen }),
   setCallMinimized: (isMinimized) => set({ isCallMinimized: isMinimized }),
+  setMuted: (isMuted) => set({ isMuted }),
+  setCameraOff: (isCameraOff) => set({ isCameraOff }),
   setMessageLoadPolicy: (policy) => {
     localStorage.setItem('reach_message_load_policy', policy);
     set({ messageLoadPolicy: policy });

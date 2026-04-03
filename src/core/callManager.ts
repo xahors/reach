@@ -34,6 +34,11 @@ class CallManager {
         this.currentCall = newCall;
         useAppStore.getState().setActiveCall(newCall);
       });
+
+      // Handle remote mute changes
+      call.on(CallEvent.RemoteHoldUnhold, () => {
+        // Just refresh UI state if needed
+      });
     });
   }
 
@@ -48,6 +53,13 @@ class CallManager {
       this.currentCall = call;
       useAppStore.getState().setActiveCall(call);
 
+      // Set initial mute states based on type
+      if (type === 'voice') {
+        useAppStore.getState().setCameraOff(true);
+      } else {
+        useAppStore.getState().setCameraOff(false);
+      }
+
       call.on(CallEvent.Hangup, () => {
         this.clearCall();
       });
@@ -56,6 +68,8 @@ class CallManager {
         this.clearCall();
       });
 
+      // Always request both audio and video streams so they can be toggled
+      // but the second param (video) determines if we START with video enabled
       await call.placeCall(true, type === 'video');
     } catch (err) {
       console.error('Error placing call:', err);
@@ -83,6 +97,26 @@ class CallManager {
       this.currentCall.hangup(CallErrorCode.UserHangup, false);
       this.clearCall();
     }
+  }
+
+  setMuted(muted: boolean) {
+    if (this.currentCall) {
+      this.currentCall.setMicrophoneMuted(muted);
+    }
+  }
+
+  setVideoMuted(muted: boolean) {
+    if (this.currentCall) {
+      this.currentCall.setLocalVideoMuted(muted);
+    }
+  }
+
+  isMicrophoneMuted(): boolean {
+    return this.currentCall?.isMicrophoneMuted() ?? false;
+  }
+
+  isLocalVideoMuted(): boolean {
+    return this.currentCall?.isLocalVideoMuted() ?? false;
   }
 
   private clearCall() {
