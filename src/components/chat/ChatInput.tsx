@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MsgType } from 'matrix-js-sdk';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MsgType, type RoomMember } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
+import { useRoomMembers } from '../../hooks/useRoomMembers';
 import { matrixService } from '../../core/matrix';
 import { PlusCircle, Gift, StickyNote, Smile, ShieldAlert, X, Reply, Pencil } from 'lucide-react';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
@@ -18,6 +19,12 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Mention state
+  const { members } = useRoomMembers(roomId);
+  const [mentionFilter, setMentionFilter] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  
   const client = useMatrixClient();
   const { 
     setSettingsOpen, 
@@ -65,6 +72,63 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     };
   }, []);
 
+  const filteredMembers = mentionFilter !== null 
+    ? members.filter(m => 
+        m.name.toLowerCase().includes(mentionFilter.toLowerCase()) || 
+        m.userId.toLowerCase().includes(mentionFilter.toLowerCase())
+      ).slice(0, 8)
+    : [];
+
+  const insertMention = useCallback((member: RoomMember) => {
+    if (mentionFilter === null) return;
+    
+    const parts = message.split('@');
+    parts.pop(); // Remove the partial filter term
+    const start = parts.join('@');
+    
+    const newMessage = `${start}@${member.name} `;
+    setMessage(newMessage);
+    setMentionFilter(null);
+    inputRef.current?.focus();
+  }, [message, mentionFilter]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionFilter !== null && filteredMembers.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(i => (i + 1) % filteredMembers.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(i => (i - 1 + filteredMembers.length) % filteredMembers.length);
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertMention(filteredMembers[mentionIndex]);
+      } else if (e.key === 'Escape') {
+        setMentionFilter(null);
+      }
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setMessage(val);
+    if (error) setError(null);
+
+    const cursorPosition = e.target.selectionStart || 0;
+    const textBeforeCursor = val.substring(0, cursorPosition);
+    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
+
+    if (lastAtSymbol !== -1 && (lastAtSymbol === 0 || textBeforeCursor[lastAtSymbol - 1] === ' ')) {
+      const filter = textBeforeCursor.substring(lastAtSymbol + 1);
+      if (!filter.includes(' ')) {
+        setMentionFilter(filter);
+        setMentionIndex(0);
+        return;
+      }
+    }
+    setMentionFilter(null);
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim() || !client) return;
@@ -74,6 +138,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     setError(null);
     setShowEmojiPicker(false);
     setShowStickerPicker(false);
+    setMentionFilter(null);
 
     try {
       if (editingEvent) {
@@ -90,7 +155,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
             event_id: originalEventId,
           },
         };
-        // @ts-expect-error: raw object might not match deep SDK type
+        // @ts-expect-error: SDK type mismatch
         await client.sendMessage(roomId, editContent);
         setEditingEvent(null);
       } else if (replyingToEvent) {
@@ -103,7 +168,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
             },
           },
         };
-        // @ts-expect-error: raw object might not match deep SDK type
+        // @ts-expect-error: SDK type mismatch
         await client.sendMessage(roomId, replyContent);
         setReplyingToEvent(null);
       } else {
@@ -130,7 +195,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     setShowStickerPicker(false);
     
     try {
-      // @ts-expect-error: m.sticker is a custom type
+      // @ts-expect-error: custom type
       await client.sendEvent(roomId, 'm.sticker', {
         body: sticker.body,
         url: sticker.url,
@@ -168,7 +233,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           size: file.size,
         }
       };
-      // @ts-expect-error: raw object might not match deep SDK type
+      // @ts-expect-error: SDK type mismatch
       await client.sendMessage(roomId, mediaContent);
     } catch (err) {
       console.error('File upload failed:', err);
@@ -192,6 +257,35 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         className="hidden"
         accept="image/*,video/*"
       />
+
+      {/* Mention Picker */}
+      {mentionFilter !== null && filteredMembers.length > 0 && (
+        <div className="absolute bottom-full left-4 mb-2 w-64 rounded-lg bg-discord-sidebar shadow-xl border border-discord-hover overflow-hidden z-50">
+          <div className="p-2 border-b border-discord-border bg-discord-dark">
+            <span className="text-[10px] font-bold uppercase text-discord-text-muted">Members matching "{mentionFilter}"</span>
+          </div>
+          <div className="max-h-60 overflow-y-auto no-scrollbar py-1">
+            {filteredMembers.map((member, i) => (
+              <button
+                key={member.userId}
+                onClick={() => insertMention(member)}
+                onMouseEnter={() => setMentionIndex(i)}
+                className={`flex w-full items-center px-3 py-2 text-sm transition ${i === mentionIndex ? 'bg-discord-hover text-white' : 'text-discord-text-muted hover:text-discord-text'}`}
+              >
+                <div className="mr-3 h-6 w-6 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-[10px] text-white font-bold overflow-hidden">
+                  {member.getAvatarUrl(client!.getHomeserverUrl(), 24, 24, 'crop', undefined, true) ? (
+                    <img src={member.getAvatarUrl(client!.getHomeserverUrl(), 24, 24, 'crop', undefined, true)!} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    member.name.charAt(0).toUpperCase()
+                  )}
+                </div>
+                <span className="truncate font-medium">{member.name}</span>
+                <span className="ml-2 truncate text-[10px] opacity-50">{member.userId}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Reply/Edit Context Bar */}
       {(editingEvent || replyingToEvent) && (
@@ -275,10 +369,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           type="text"
           ref={inputRef}
           value={message}
-          onChange={(e) => {
-            setMessage(e.target.value);
-            if (error) setError(null);
-          }}
+          onKeyDown={handleKeyDown}
+          onChange={handleInputChange}
           placeholder={`Message #${roomName}`}
           className="flex-1 bg-transparent text-base text-discord-text outline-none placeholder:text-discord-text-muted"
         />

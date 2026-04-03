@@ -146,6 +146,17 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
   // 2. Set the display content
   let content: React.ReactNode = clearContent?.body;
 
+  if (!isRedacted && typeof content === 'string') {
+    // Basic mention highlighting for @name
+    const parts = content.split(/(@[^\s]+)/g);
+    content = parts.map((part, i) => {
+      if (part.startsWith('@')) {
+        return <span key={i} className="rounded bg-discord-accent/20 px-1 font-medium text-discord-accent hover:bg-discord-accent hover:text-white transition-colors cursor-pointer">{part}</span>;
+      }
+      return part;
+    });
+  }
+
   if (isRedacted) {
     content = <span className="italic text-discord-text-muted">This message was deleted.</span>;
   } else if (event.isEncrypted() && !event.getClearContent() && !replacingEvent?.getClearContent()) {
