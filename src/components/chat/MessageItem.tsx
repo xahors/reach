@@ -112,6 +112,16 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
 
   let content: React.ReactNode = event.getContent().body;
   
+  const replacingEvent = event.replacingEvent();
+  if (replacingEvent) {
+    const newContent = replacingEvent.getClearContent() || replacingEvent.getContent();
+    if (newContent?.['m.new_content']?.body) {
+      content = newContent['m.new_content'].body;
+    } else if (newContent?.body) {
+      content = newContent.body;
+    }
+  }
+  
   if (isRedacted) {
     content = <span className="italic text-discord-text-muted">This message was deleted.</span>;
   } else if (event.isEncrypted()) {
