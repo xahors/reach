@@ -110,32 +110,24 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
     );
   };
 
-  let content: React.ReactNode = event.getContent().body;
-  
+  // 1. Resolve the latest content (handling edits and encryption)
+  let clearContent = event.getClearContent() || event.getContent();
   const replacingEvent = event.replacingEvent();
+  
   if (replacingEvent) {
-    const editContent = replacingEvent.getClearContent() || replacingEvent.getContent();
-    // In Matrix, edits store the new text in content['m.new_content'].body
-    if (editContent?.['m.new_content']?.body) {
-      content = editContent['m.new_content'].body;
-    } else if (editContent?.body) {
-      content = editContent.body;
-    }
-  } else {
-    // If no replacingEvent yet, check if the content itself was already aggregated (some SDK versions)
-    const aggregatedContent = event.getContent();
-    if (aggregatedContent?.['m.new_content']?.body) {
-       content = aggregatedContent['m.new_content'].body;
+    const editClearContent = replacingEvent.getClearContent() || replacingEvent.getContent();
+    if (editClearContent?.['m.new_content']) {
+      clearContent = editClearContent['m.new_content'];
     }
   }
-  
+
+  // 2. Set the display content
+  let content: React.ReactNode = clearContent?.body;
+
   if (isRedacted) {
     content = <span className="italic text-discord-text-muted">This message was deleted.</span>;
-  } else if (event.isEncrypted()) {
-    const clear = event.getClearContent();
-    if (clear && clear.body) {
-      content = clear.body;
-    } else if (event.isDecryptionFailure()) {
+  } else if (event.isEncrypted() && !event.getClearContent() && !replacingEvent?.getClearContent()) {
+    if (event.isDecryptionFailure()) {
       content = (
         <span className="flex items-center">
           <span className="mr-2">🔐 Unable to decrypt message (waiting for keys)</span>
@@ -149,8 +141,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
           </button>
         </span>
       );
-    } else if (!content) {
-      content = '🔐 *** Encrypted Message ***';
+    } else {
+      content = <span className="italic text-discord-text-muted">🔐 Encrypted message</span>;
     }
   }
 

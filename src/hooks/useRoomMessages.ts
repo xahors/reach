@@ -26,8 +26,8 @@ export const useRoomMessages = (roomId: string | null) => {
     
     const windowEvents = timelineWindow.current?.getEvents() || [];
     
-    // If we have a window, use it. It's more reliable for history + live updates.
-    if (timelineWindow.current) {
+    // Use the window events if the window has been loaded, otherwise fallback to live timeline
+    if (timelineWindow.current && windowEvents.length > 0) {
       events = [...windowEvents];
     } else {
       events = [...room.getLiveTimeline().getEvents()];
