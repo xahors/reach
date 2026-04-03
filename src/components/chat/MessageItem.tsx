@@ -19,6 +19,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   const isFailed = status === EventStatus.NOT_SENT;
   const isRedacted = event.isRedacted();
   const isMe = event.getSender() === userId;
+  const isEdited = !!event.replacingEventId();
 
   const replyEventId = event.replyEventId;
   const room = client?.getRoom(event.getRoomId() || '');
@@ -180,7 +181,12 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
         </div>
         <div className="ml-10 flex flex-col text-base text-discord-text">
           {renderReply()}
-          <div className="flex-1">{content}</div>
+          <div className="flex-1">
+            {content}
+            {isEdited && !isRedacted && (
+              <span className="ml-1 text-[10px] text-discord-text-muted select-none">(edited)</span>
+            )}
+          </div>
           {media}
           {isFailed && <span className="mt-1 text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
         </div>
@@ -210,7 +216,12 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
         </div>
         <div className={`text-base text-discord-text ${isFailed ? 'text-red-400' : ''}`}>
           {renderReply()}
-          <div>{content}</div>
+          <div>
+            {content}
+            {isEdited && !isRedacted && (
+              <span className="ml-1 text-[10px] text-discord-text-muted select-none">(edited)</span>
+            )}
+          </div>
           {media}
         </div>
       </div>

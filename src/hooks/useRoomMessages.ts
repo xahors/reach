@@ -61,12 +61,20 @@ export const useRoomMessages = (roomId: string | null) => {
 
   useEffect(() => {
     const allEvents = getEvents();
-    const filtered = allEvents.filter((event) => 
-      event.getType() === 'm.room.message' || 
-      event.getType() === 'm.room.encrypted' ||
-      event.getType() === 'm.call.invite' ||
-      event.getType() === 'm.room.member'
-    );
+    const filtered = allEvents.filter((event) => {
+      const type = event.getType();
+      const isDisplayable = (
+        type === 'm.room.message' || 
+        type === 'm.room.encrypted' ||
+        type === 'm.call.invite' ||
+        type === 'm.room.member'
+      );
+      
+      // Filter out the replacement events themselves (they aggregate onto the original)
+      const isReplacement = event.isRelation('m.replace');
+      
+      return isDisplayable && !isReplacement;
+    });
     
     filtered.sort((a, b) => a.getTs() - b.getTs());
     setMessages(filtered);
