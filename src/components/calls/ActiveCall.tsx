@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { callManager } from '../../core/callManager';
-import { Phone, PhoneOff, Mic, GripHorizontal } from 'lucide-react';
+import { Phone, PhoneOff, Mic, GripHorizontal, Minus } from 'lucide-react';
 import { CallEvent } from 'matrix-js-sdk';
 import Draggable from 'react-draggable';
 
 const ActiveCall: React.FC = () => {
-  const { activeCall, incomingCall } = useAppStore();
+  const { activeCall, incomingCall, isCallMinimized, setCallMinimized } = useAppStore();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -61,6 +61,9 @@ const ActiveCall: React.FC = () => {
   }, [activeCall, callState]);
 
   if (!activeCall && !incomingCall) return null;
+  
+  // Hide the floating modal if minimized
+  if (activeCall && isCallMinimized) return null;
 
   if (incomingCall) {
     return (
@@ -102,7 +105,16 @@ const ActiveCall: React.FC = () => {
             </div>
             
             <div className="flex justify-between items-center mb-4">
-               <h3 className="text-white font-bold text-sm">Active Call: {callState}</h3>
+               <div className="flex items-center space-x-2">
+                 <h3 className="text-white font-bold text-sm">Active Call: {callState}</h3>
+                 <button 
+                   onClick={() => setCallMinimized(true)}
+                   className="rounded p-1 hover:bg-discord-hover text-discord-text-muted hover:text-white transition"
+                   title="Minimize"
+                 >
+                   <Minus className="h-4 w-4" />
+                 </button>
+               </div>
                <span className="text-xs text-discord-text-muted animate-pulse">{activeCall.type === 'video' ? 'Video' : 'Voice'}</span>
             </div>
             

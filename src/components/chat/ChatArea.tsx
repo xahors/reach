@@ -5,12 +5,18 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
-import { Hash, Phone, Video, Bell, Pin, Users, Search, HelpCircle } from 'lucide-react';
-
+import { Hash, Phone, Video, Bell, Pin, Users, Search, HelpCircle, Mic, PhoneOff } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 
 const ChatArea: React.FC = () => {
-  const { activeRoomId, isChannelDetailsOpen, setChannelDetailsOpen } = useAppStore();
+  const { 
+    activeRoomId, 
+    isChannelDetailsOpen, 
+    setChannelDetailsOpen, 
+    isCallMinimized, 
+    setCallMinimized, 
+    activeCall 
+  } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
   const { messages, loading, paginate, canPaginate, markAsRead, readMarkerId } = useRoomMessages(roomId);
@@ -35,12 +41,42 @@ const ChatArea: React.FC = () => {
     <div className="flex flex-1 flex-col overflow-hidden bg-discord-chat-bg">
       {/* Room Header */}
       <header className="flex h-12 items-center justify-between border-b border-discord-border px-4 shadow-sm">
-        <div className="flex items-center space-x-2">
-          <Hash className="h-6 w-6 text-discord-muted" />
-          <h1 className="font-bold text-white">{activeRoom.name}</h1>
+        <div className="flex items-center space-x-2 flex-1 min-w-0">
+          <Hash className="h-6 w-6 text-discord-muted flex-shrink-0" />
+          <h1 className="font-bold text-white truncate">{activeRoom.name}</h1>
+          
+          {/* Minimized Call Info */}
+          {activeCall && isCallMinimized && (
+            <div 
+              onClick={() => setCallMinimized(false)}
+              className="ml-4 flex cursor-pointer items-center space-x-3 rounded-md bg-discord-accent/20 px-3 py-1 text-xs transition hover:bg-discord-accent/30 animate-in fade-in zoom-in duration-300"
+            >
+              <div className="flex items-center space-x-2 text-discord-accent">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-discord-accent" />
+                <span className="font-bold uppercase tracking-wider hidden sm:inline">Call Active</span>
+              </div>
+              
+              <div className="flex items-center space-x-2 border-l border-discord-accent/30 pl-3">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); /* Mute logic would be integrated here */ }}
+                  className="rounded p-1 hover:bg-discord-accent/40 text-white transition"
+                  title="Mute"
+                >
+                  <Mic className="h-3 w-3" />
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); callManager.hangupCall(); }}
+                  className="rounded p-1 hover:bg-red-500 text-white transition"
+                  title="End Call"
+                >
+                  <PhoneOff className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center space-x-4 text-discord-muted">
+        <div className="flex items-center space-x-4 text-discord-muted flex-shrink-0">
           <Phone 
             className="h-6 w-6 cursor-pointer hover:text-discord-text" 
             onClick={() => handleCall('voice')}
@@ -56,7 +92,7 @@ const ChatArea: React.FC = () => {
             className={`h-6 w-6 cursor-pointer transition-colors ${isChannelDetailsOpen ? 'text-white' : 'hover:text-discord-text'}`}
             onClick={() => setChannelDetailsOpen(!isChannelDetailsOpen)}
           />
-          <div className="relative flex items-center">
+          <div className="relative hidden md:flex items-center">
             <input 
               type="text" 
               placeholder="Search" 
