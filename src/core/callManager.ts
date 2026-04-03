@@ -103,6 +103,11 @@ class CallManager {
     try {
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const context = new AudioContextClass();
+      
+      if (context.state === 'suspended') {
+        context.resume();
+      }
+
       const oscillator = context.createOscillator();
       const gain = context.createGain();
 
@@ -139,7 +144,13 @@ class CallManager {
 
   setVideoMuted(muted: boolean) {
     if (this.currentCall) {
-      this.currentCall.setLocalVideoMuted(muted);
+      // If we are unmuting video, ensure we have a stream with video
+      if (!muted && !this.currentCall.hasLocalUserMediaVideoTrack) {
+        console.log("Upgrading call to include video...");
+        this.currentCall.setLocalVideoMuted(false);
+      } else {
+        this.currentCall.setLocalVideoMuted(muted);
+      }
       this.playFeedbackSound(muted ? 'mute' : 'unmute');
     }
   }
