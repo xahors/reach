@@ -11,6 +11,7 @@ interface AppState {
   incomingCall: MatrixCall | null;
   isSettingsOpen: boolean;
   isChannelDetailsOpen: boolean;
+  messageLoadPolicy: 'latest' | 'last_read';
   editingEvent: MatrixEvent | null;
   replyingToEvent: MatrixEvent | null;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
@@ -21,6 +22,7 @@ interface AppState {
   setIncomingCall: (call: MatrixCall | null) => void;
   setSettingsOpen: (isOpen: boolean) => void;
   setChannelDetailsOpen: (isOpen: boolean) => void;
+  setMessageLoadPolicy: (policy: 'latest' | 'last_read') => void;
   setEditingEvent: (event: MatrixEvent | null) => void;
   setReplyingToEvent: (event: MatrixEvent | null) => void;
 }
@@ -35,6 +37,7 @@ export const useAppStore = create<AppState>((set) => ({
   incomingCall: null,
   isSettingsOpen: false,
   isChannelDetailsOpen: false,
+  messageLoadPolicy: (localStorage.getItem('reach_message_load_policy') as 'latest' | 'last_read') || 'last_read',
   editingEvent: null,
   replyingToEvent: null,
   setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
@@ -45,6 +48,10 @@ export const useAppStore = create<AppState>((set) => ({
   setIncomingCall: (call) => set({ incomingCall: call }),
   setSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
   setChannelDetailsOpen: (isOpen) => set({ isChannelDetailsOpen: isOpen }),
+  setMessageLoadPolicy: (policy) => {
+    localStorage.setItem('reach_message_load_policy', policy);
+    set({ messageLoadPolicy: policy });
+  },
   setEditingEvent: (event) => set({ editingEvent: event, replyingToEvent: null }),
   setReplyingToEvent: (event) => set({ replyingToEvent: event, editingEvent: null }),
 }));

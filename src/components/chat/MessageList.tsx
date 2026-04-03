@@ -3,6 +3,8 @@ import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
 import { Loader2 } from 'lucide-react';
 
+import { useAppStore } from '../../store/useAppStore';
+
 interface MessageListProps {
   messages: MatrixEvent[];
   loading?: boolean;
@@ -16,6 +18,7 @@ const MessageList: React.FC<MessageListProps> = ({
   onPaginate, 
   canPaginate 
 }) => {
+  const { messageLoadPolicy } = useAppStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
@@ -24,7 +27,9 @@ const MessageList: React.FC<MessageListProps> = ({
   // Handle auto-scroll to bottom on new messages
   useEffect(() => {
     if (isInitialLoad && messages.length > 0) {
-      bottomRef.current?.scrollIntoView();
+      if (messageLoadPolicy === 'latest') {
+        bottomRef.current?.scrollIntoView();
+      }
       // Small timeout to avoid setState in effect body lint error
       setTimeout(() => setIsInitialLoad(false), 0);
     } else if (scrollRef.current && prevScrollHeight !== null) {
@@ -34,7 +39,7 @@ const MessageList: React.FC<MessageListProps> = ({
       // Small timeout to avoid setState in effect body lint error
       setTimeout(() => setPrevScrollHeight(null), 0);
     }
-  }, [messages, isInitialLoad, prevScrollHeight]);
+  }, [messages, isInitialLoad, prevScrollHeight, messageLoadPolicy]);
 
   const handleScroll = useCallback(async () => {
     if (!scrollRef.current || loading || !canPaginate || !onPaginate) return;

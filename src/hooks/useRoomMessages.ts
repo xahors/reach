@@ -2,8 +2,11 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, PendingEventOrdering, ClientEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
+import { useAppStore } from '../store/useAppStore';
+
 export const useRoomMessages = (roomId: string | null) => {
   const client = useMatrixClient();
+  const { messageLoadPolicy } = useAppStore();
   const [messages, setMessages] = useState<MatrixEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [canPaginate, setCanPaginate] = useState(true);
@@ -142,7 +145,15 @@ export const useRoomMessages = (roomId: string | null) => {
         windowLimit: 1000
       });
       try {
-        await timelineWindow.current.load(undefined, 50);
+        if (messageLoadPolicy === 'latest') {
+          // Load from the very end of the timeline
+          await timelineWindow.current.load(undefined, 50);
+        } else {
+          // Load around the last read receipt (standard Matrix behavior for load() with no arguments)
+          // or fallback to latest if no read receipt exists.
+          const readReceipt = targetRoom.getEventReadUpTo(client.getUserId()!);
+          await timelineWindow.current.load(readReceipt || undefined, 50);
+        }
       } catch (error) {
         console.error('Failed to load timeline:', error);
       } finally {
