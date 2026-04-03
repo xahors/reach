@@ -13,14 +13,20 @@ const ChannelList: React.FC = () => {
   const client = useMatrixClient();
 
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
+  const lastSelectedSpace = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    // If we just entered a space, select the first room if none is active
-    if (activeSpaceId && !activeRoomId && !spaceLoading && rooms.length > 0) {
-      const firstRoomId = rooms[0].roomId;
-      Promise.resolve().then(() => setActiveRoomId(firstRoomId));
+    // If we just entered a space, select the first room if none is active OR if the space changed
+    if (activeSpaceId && !spaceLoading && rooms.length > 0) {
+      if (lastSelectedSpace.current !== activeSpaceId) {
+        const firstRoomId = rooms[0].roomId;
+        lastSelectedSpace.current = activeSpaceId;
+        Promise.resolve().then(() => setActiveRoomId(firstRoomId));
+      }
+    } else if (!activeSpaceId) {
+      lastSelectedSpace.current = null;
     }
-  }, [activeSpaceId, activeRoomId, spaceLoading, rooms, setActiveRoomId]);
+  }, [activeSpaceId, spaceLoading, rooms, setActiveRoomId]);
 
   const renderUserFooter = () => (
     <div className="flex h-14 items-center bg-[#232428] px-2 py-2 mt-auto">

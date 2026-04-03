@@ -7,10 +7,15 @@ export const useRoomMessages = (roomId: string | null) => {
   const [messages, setMessages] = useState<MatrixEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [canPaginate, setCanPaginate] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const timelineWindow = useRef<TimelineWindow | null>(null);
   
   // Keep track of current room to manage listeners
   const currentRoomRef = useRef<Room | null>(null);
+
+  const refreshMessages = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
 
   const getEvents = useCallback(() => {
     if (!client || !roomId) return [];
@@ -54,7 +59,7 @@ export const useRoomMessages = (roomId: string | null) => {
     return events;
   }, [client, roomId]);
 
-  const updateMessages = useCallback(() => {
+  useEffect(() => {
     const allEvents = getEvents();
     const filtered = allEvents.filter((event) => 
       event.getType() === 'm.room.message' || 
@@ -64,12 +69,12 @@ export const useRoomMessages = (roomId: string | null) => {
     );
     
     filtered.sort((a, b) => a.getTs() - b.getTs());
-    setMessages([...filtered]);
+    setMessages(filtered);
     
     if (timelineWindow.current) {
       setCanPaginate(timelineWindow.current.canPaginate(Direction.Backward));
     }
-  }, [getEvents]);
+  }, [getEvents, refreshTrigger]);
 
   useEffect(() => {
     if (!client || !roomId) {
@@ -82,7 +87,7 @@ export const useRoomMessages = (roomId: string | null) => {
     currentRoomRef.current = room;
 
     // Use a small timeout to avoid setState during effect body
-    const initialLoadTimeout = setTimeout(() => updateMessages(), 0);
+    const initialLoadTimeout = setTimeout(() => refreshMessages(), 0);
 
     const onTimelineEvent = (_event: MatrixEvent, evRoom: Room | undefined) => {
       if (evRoom?.roomId === roomId) {
@@ -92,19 +97,19 @@ export const useRoomMessages = (roomId: string | null) => {
         }
         
         // Use a small timeout to ensure SDK has finished processing and live timeline is updated
-        setTimeout(() => updateMessages(), 0);
+        setTimeout(() => refreshMessages(), 0);
       }
     };
 
     const onEventDecrypted = (event: MatrixEvent) => {
       if (event.getRoomId() === roomId) {
-        updateMessages();
+        refreshMessages();
       }
     };
 
     const onEventStatus = (event: MatrixEvent) => {
       if (event.getRoomId() === roomId) {
-        updateMessages();
+        refreshMessages();
       }
     };
 
@@ -115,11 +120,11 @@ export const useRoomMessages = (roomId: string | null) => {
            if (r) {
              currentRoomRef.current = r;
              r.on(RoomEvent.Timeline, onTimelineEvent);
-             r.on(RoomEvent.LocalEchoUpdated, updateMessages);
+             r.on(RoomEvent.LocalEchoUpdated, refreshMessages);
              initTimeline(r);
            }
          }
-         updateMessages();
+         refreshMessages();
       }
     };
 
@@ -127,7 +132,7 @@ export const useRoomMessages = (roomId: string | null) => {
       if (r.roomId === roomId && !currentRoomRef.current) {
         currentRoomRef.current = r;
         r.on(RoomEvent.Timeline, onTimelineEvent);
-        r.on(RoomEvent.LocalEchoUpdated, updateMessages);
+        r.on(RoomEvent.LocalEchoUpdated, refreshMessages);
         initTimeline(r);
       }
     };
@@ -142,7 +147,7 @@ export const useRoomMessages = (roomId: string | null) => {
       } catch (error) {
         console.error('Failed to load timeline:', error);
       } finally {
-        updateMessages();
+        refreshMessages();
         Promise.resolve().then(() => setLoading(false));
       }
     };
@@ -158,10 +163,10 @@ export const useRoomMessages = (roomId: string | null) => {
     // Room specific listeners
     if (room) {
       room.on(RoomEvent.Timeline, onTimelineEvent);
-      room.on(RoomEvent.LocalEchoUpdated, updateMessages);
+      room.on(RoomEvent.LocalEchoUpdated, refreshMessages);
       initTimeline(room);
     } else {
-      updateMessages();
+      refreshMessages();
     }
 
     return () => {
@@ -175,11 +180,11 @@ export const useRoomMessages = (roomId: string | null) => {
       
       if (currentRoomRef.current) {
         currentRoomRef.current.removeListener(RoomEvent.Timeline, onTimelineEvent);
-        currentRoomRef.current.removeListener(RoomEvent.LocalEchoUpdated, updateMessages);
+        currentRoomRef.current.removeListener(RoomEvent.LocalEchoUpdated, refreshMessages);
       }
       timelineWindow.current = null;
     };
-  }, [client, roomId, updateMessages, messages]);
+  }, [client, roomId, refreshMessages]);
 
   const paginate = useCallback(async () => {
     if (!timelineWindow.current || !canPaginate || loading) return;
@@ -187,13 +192,13 @@ export const useRoomMessages = (roomId: string | null) => {
     setLoading(true);
     try {
       await timelineWindow.current.paginate(Direction.Backward, 30);
-      updateMessages();
+      refreshMessages();
     } catch (error) {
       console.error('Pagination failed:', error);
     } finally {
       setLoading(false);
     }
-  }, [canPaginate, loading, updateMessages]);
+  }, [canPaginate, loading, refreshMessages]);
 
   return { messages, loading, paginate, canPaginate };
 };

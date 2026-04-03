@@ -15,20 +15,21 @@ export const useMatrixSync = () => {
       if (isSynced) {
         Promise.resolve().then(() => setSynced(false));
       }
-      if (syncState !== null) {
-        Promise.resolve().then(() => setSyncState(null));
-      }
       return;
     }
 
-
     const onSync = (state: string) => {
-      Promise.resolve().then(() => {
-        setSyncState(state);
-        if (state === 'PREPARED' || state === 'SYNCING') {
-          setSynced(true);
-        }
+      // Only update if state actually changed to avoid cycles
+      setSyncState((prev) => {
+        if (prev === state) return prev;
+        return state;
       });
+      
+      if (state === 'PREPARED' || state === 'SYNCING') {
+        if (!isSynced) {
+          Promise.resolve().then(() => setSynced(true));
+        }
+      }
     };
 
     client.on(ClientEvent.Sync, onSync);
@@ -42,7 +43,8 @@ export const useMatrixSync = () => {
     return () => {
       client.removeListener(ClientEvent.Sync, onSync);
     };
-  }, [client, isLoggedIn, setSynced, syncState, isSynced]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, isLoggedIn, setSynced]);
 
   return { isSynced, syncState };
 };
