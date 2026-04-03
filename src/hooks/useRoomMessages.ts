@@ -157,15 +157,23 @@ export const useRoomMessages = (roomId: string | null) => {
             forwardAttempts++;
           }
         } else {
+          // Load around the last read marker (Fully Read) or read receipt
           const myUserId = client.getUserId();
-          const readReceipt = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
+          // fully_read marker is often more accurate for "where I left off"
+          const readMarkerId = targetRoom.getAccountData('m.fully_read')?.getContent()?.event_id;
+          const readReceiptId = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
           
-          if (readReceipt) {
-            await timelineWindow.current.load(readReceipt, 50);
+          const targetEventId = readMarkerId || readReceiptId;
+          
+          if (targetEventId) {
+            await timelineWindow.current.load(targetEventId, 50);
+            
+            // Fetch a bit of forward context
             if (timelineWindow.current.canPaginate(Direction.Forward)) {
               await timelineWindow.current.paginate(Direction.Forward, 25);
             }
           } else {
+            // Fallback to latest
             const liveEvents = targetRoom.getLiveTimeline().getEvents();
             const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
             await timelineWindow.current.load(lastEventId, 50);
@@ -268,16 +276,20 @@ export const useRoomMessages = (roomId: string | null) => {
     
     if (!eventId || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
     
-    // Only send if it's a new event ID AND we haven't sent one in the last 2 seconds
+    // Throttle: Only send if it's a new event ID AND we haven't sent one in the last 3 seconds
     const now = Date.now();
-    if (eventId === lastSentReceiptIdRef.current || (now - lastReceiptTimeRef.current < 2000)) return;
+    if (eventId === lastSentReceiptIdRef.current || (now - lastReceiptTimeRef.current < 3000)) return;
 
     try {
       lastSentReceiptIdRef.current = eventId;
       lastReceiptTimeRef.current = now;
-      await client.sendReadReceipt(lastMessage);
+      
+      // setRoomReadMarkers updates:
+      // 1. Fully read marker (private, where you left off)
+      // 2. Read receipt (public, others see you read up to here)
+      await client.setRoomReadMarkers(roomId, eventId, lastMessage);
     } catch (error) {
-      console.error('Failed to send read receipt:', error);
+      console.error('Failed to update read markers:', error);
       lastSentReceiptIdRef.current = null;
     }
   }, [client, roomId, messages, loading]);
