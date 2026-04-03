@@ -11,6 +11,10 @@ const ActiveCall: React.FC = () => {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [callState, setCallState] = useState<string>('');
+  
+  // nodeRefs for react-draggable to avoid findDOMNode (React 19 compatibility)
+  const incomingNodeRef = useRef<HTMLDivElement>(null);
+  const activeNodeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!activeCall) {
@@ -61,8 +65,8 @@ const ActiveCall: React.FC = () => {
   if (incomingCall) {
     return (
       <div className="absolute top-4 right-4 z-50">
-        <Draggable bounds="parent">
-          <div className="w-72 cursor-move rounded-lg bg-discord-sidebar p-4 shadow-xl border border-discord-hover">
+        <Draggable nodeRef={incomingNodeRef} bounds="parent">
+          <div ref={incomingNodeRef} className="w-72 cursor-move rounded-lg bg-discord-sidebar p-4 shadow-xl border border-discord-hover">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-white font-bold">Incoming Call</h3>
               <GripHorizontal className="h-4 w-4 text-discord-text-muted" />
@@ -91,8 +95,8 @@ const ActiveCall: React.FC = () => {
   if (activeCall) {
     return (
       <div className="fixed inset-0 pointer-events-none z-50">
-        <Draggable handle=".drag-handle" bounds="parent">
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto rounded-lg bg-discord-sidebar p-4 shadow-xl border border-discord-hover w-[400px]">
+        <Draggable nodeRef={activeNodeRef} handle=".drag-handle" bounds="parent">
+          <div ref={activeNodeRef} className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto rounded-lg bg-discord-sidebar p-4 shadow-xl border border-discord-hover w-[400px]">
             <div className="drag-handle flex cursor-grab active:cursor-grabbing items-center justify-center mb-2 -mt-2 opacity-50 hover:opacity-100 transition">
               <GripHorizontal className="h-5 w-5 text-discord-text-muted" />
             </div>

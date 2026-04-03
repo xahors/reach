@@ -5,7 +5,8 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
-import { Hash, Volume2, Video, Bell, Pin, Users, Search, HelpCircle } from 'lucide-react';
+import { Hash, Phone, Video, Bell, Pin, Users, Search, HelpCircle } from 'lucide-react';
+
 import { callManager } from '../../core/callManager';
 
 const ChatArea: React.FC = () => {
@@ -40,10 +41,11 @@ const ChatArea: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-4 text-discord-muted">
-          <Volume2 
+          <Phone 
             className="h-6 w-6 cursor-pointer hover:text-discord-text" 
             onClick={() => handleCall('voice')}
           />
+
           <Video 
             className="h-6 w-6 cursor-pointer hover:text-discord-text" 
             onClick={() => handleCall('video')}

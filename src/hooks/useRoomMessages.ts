@@ -101,7 +101,7 @@ export const useRoomMessages = (roomId: string | null) => {
       room.removeListener(RoomEvent.AccountData, onAccountData);
       client.removeListener(ClientEvent.Sync, updateReadMarker);
     };
-  }, [client, roomId]);
+  }, [client, roomId, readMarkerId]);
 
   useEffect(() => {
     const allEvents = getEvents();
