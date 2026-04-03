@@ -24,6 +24,12 @@ const MessageList: React.FC<MessageListProps> = ({
   const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
   const [isReady, setIsReady] = useState(false);
 
+  const scrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, []);
+
   // 1. Initial positioning and scroll restoration
   useEffect(() => {
     if (messages.length === 0) return;
@@ -31,10 +37,12 @@ const MessageList: React.FC<MessageListProps> = ({
     if (!isReady) {
       // First time messages are loaded for this channel
       if (messageLoadPolicy === 'latest') {
-        bottomRef.current?.scrollIntoView();
-      } else {
-        // For 'last_read', we might want to center or stay at top depending on load point
-        // but for now let's just mark ready.
+        // Use requestAnimationFrame to ensure DOM has rendered
+        requestAnimationFrame(() => {
+          scrollToBottom();
+          // Second pass after a short delay to account for most layout shifts
+          setTimeout(scrollToBottom, 50);
+        });
       }
       
       // Delay setting ready to prevent immediate pagination triggers
@@ -46,19 +54,19 @@ const MessageList: React.FC<MessageListProps> = ({
       scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
       setTimeout(() => setPrevScrollHeight(null), 0);
     }
-  }, [messages, isReady, prevScrollHeight, messageLoadPolicy]);
+  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom]);
 
   // 2. Auto-scroll to bottom on NEW messages (only if already near bottom)
   useEffect(() => {
-    if (!isReady || !scrollRef.current) return;
+    if (!isReady || !scrollRef.current || loading) return;
     
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 200;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
     
     if (isNearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isReady]);
+  }, [messages, isReady, loading]);
 
   const handleScroll = useCallback(async () => {
     // Don't paginate until initial positioning is done
@@ -67,7 +75,7 @@ const MessageList: React.FC<MessageListProps> = ({
     const { scrollTop, scrollHeight } = scrollRef.current;
     
     // Trigger pagination when scrolled near the top
-    if (scrollTop < 100) {
+    if (scrollTop < 150) {
       setPrevScrollHeight(scrollHeight);
       await onPaginate();
     }
@@ -104,9 +112,9 @@ const MessageList: React.FC<MessageListProps> = ({
     <div 
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto no-scrollbar scroll-smooth"
+      className={`flex-1 overflow-y-auto no-scrollbar transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}
     >
-      <div className="flex min-h-full flex-col justify-end pb-4">
+      <div className="flex min-h-full flex-col pb-4">
         {canPaginate && (
           <div className="flex items-center justify-center py-4">
             {loading ? (
@@ -118,7 +126,7 @@ const MessageList: React.FC<MessageListProps> = ({
         )}
         
         {renderMessages()}
-        <div ref={bottomRef} />
+        <div ref={bottomRef} className="h-px" />
       </div>
     </div>
   );

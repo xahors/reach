@@ -149,12 +149,13 @@ export const useRoomMessages = (roomId: string | null) => {
 
       try {
         if (messageLoadPolicy === 'latest') {
-          // Passing undefined to load() with a size typically loads the very end of the live timeline.
-          await timelineWindow.current.load(undefined, 50);
+          // Find the last known event in the live timeline to anchor the window
+          const liveEvents = targetRoom.getLiveTimeline().getEvents();
+          const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
           
-          // Matrix SDK load(undefined) sometimes starts at the beginning if not careful.
-          // Let's ensure we are at the end by checking if we can paginate forward.
-          // If we can, it means we aren't at the live end yet.
+          await timelineWindow.current.load(lastEventId, 50);
+          
+          // Ensure we are truly at the end (fetch forward if server has more)
           while (timelineWindow.current.canPaginate(Direction.Forward)) {
             await timelineWindow.current.paginate(Direction.Forward, 50);
           }
