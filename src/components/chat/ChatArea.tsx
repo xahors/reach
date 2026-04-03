@@ -1,12 +1,55 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
+import { usePinnedEvents } from '../../hooks/usePinnedEvents';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
-import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff } from 'lucide-react';
+import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X } from 'lucide-react';
 import { callManager } from '../../core/callManager';
+
+const PinnedMessages: React.FC<{ roomId: string, onJumpToEvent: (id: string) => void }> = ({ roomId, onJumpToEvent }) => {
+  const { pinnedEventIds } = usePinnedEvents(roomId);
+  const [isOpen, setIsOpen] = useState(true);
+  const client = useMatrixClient();
+  const room = client?.getRoom(roomId);
+  
+  if (!room || pinnedEventIds.length === 0 || !isOpen) return null;
+
+  const pinnedEvents = pinnedEventIds.map(id => room.findEventById(id)).filter(Boolean);
+
+  return (
+    <div className="flex items-center justify-between p-2 border-b border-discord-border bg-discord-dark/50 animate-in fade-in slide-in-from-top-1 duration-300">
+      <div className="flex items-center space-x-2 text-discord-text-muted overflow-hidden">
+        <Pin className="h-4 w-4 shrink-0" />
+        <span className="font-semibold text-xs uppercase tracking-wider shrink-0">Pinned</span>
+        
+        {pinnedEvents[0] && (
+          <div 
+            onClick={() => onJumpToEvent(pinnedEvents[0]!.getId()!)}
+            className="flex items-center space-x-2 truncate cursor-pointer hover:bg-white/5 p-1 rounded"
+          >
+            <span className="text-xs font-bold text-white truncate">{pinnedEvents[0].sender?.name}:</span>
+            <span className="text-xs truncate italic">{pinnedEvents[0].getContent().body}</span>
+          </div>
+        )}
+      </div>
+      
+      <div className="flex items-center space-x-2">
+        {pinnedEventIds.length > 1 && (
+          <button className="text-xs font-bold text-discord-accent hover:underline">
+            View All ({pinnedEventIds.length})
+          </button>
+        )}
+        <button onClick={() => setIsOpen(false)} className="p-1 rounded-full hover:bg-white/10 text-discord-text-muted hover:text-white">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
 const ChatArea: React.FC = () => {
   const { 
@@ -23,7 +66,7 @@ const ChatArea: React.FC = () => {
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
-  const { messages, loading, paginate, canPaginate, markAsRead, readMarkerId } = useRoomMessages(roomId);
+  const { messages, loading, paginate, canPaginate, markAsRead, readMarkerId, jumpToEvent } = useRoomMessages(roomId);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
@@ -135,16 +178,20 @@ const ChatArea: React.FC = () => {
         </div>
       </header>
 
+      {activeRoomId && <PinnedMessages roomId={activeRoomId} onJumpToEvent={jumpToEvent} />}
+
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Message List */}
           <MessageList 
             key={activeRoomId}
+            roomId={activeRoomId as string}
             messages={messages} 
             loading={loading} 
             onPaginate={paginate}
             canPaginate={canPaginate}
             onScrollBottom={markAsRead}
+            onJumpToEvent={jumpToEvent}
             readMarkerId={readMarkerId || undefined}
           />
 

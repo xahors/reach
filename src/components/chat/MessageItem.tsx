@@ -2,15 +2,17 @@ import React from 'react';
 import { MatrixEvent, EventStatus } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
-import { Reply, Pencil, Trash2 } from 'lucide-react';
+import { Reply, Pencil, Trash2, Pin } from 'lucide-react';
 
 interface MessageItemProps {
   event: MatrixEvent;
   isGrouped?: boolean;
   onJumpToReply?: (replyId: string) => void;
+  onPinToggle?: (eventId: string, isPinned: boolean) => void;
+  isPinned?: boolean;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToReply }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToReply, onPinToggle, isPinned }) => {
   const client = useMatrixClient();
   const { setEditingEvent, setReplyingToEvent, userId } = useAppStore();
   const sender = event.sender;
@@ -132,7 +134,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
     );
   };
 
-  // 1. Resolve the latest content (handling edits and encryption)
   let clearContent = event.getClearContent() || event.getContent();
   const replacingEvent = event.replacingEvent();
   
@@ -143,11 +144,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
     }
   }
 
-  // 2. Set the display content
   let content: React.ReactNode = clearContent?.body;
 
   if (!isRedacted && typeof content === 'string') {
-    // Basic mention highlighting for @name
     const parts = content.split(/(@[^\s]+)/g);
     content = parts.map((part, i) => {
       if (part.startsWith('@')) {
@@ -185,6 +184,13 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
     if (isRedacted || isSending || isFailed) return null;
     return (
       <div className="absolute -top-4 right-4 flex items-center rounded border border-discord-hover bg-discord-sidebar shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 overflow-hidden">
+        <button 
+          onClick={() => onPinToggle?.(event.getId()!, isPinned || false)}
+          className={`p-1.5 text-discord-text-muted hover:bg-discord-hover transition ${isPinned ? 'text-discord-accent' : 'hover:text-white'}`}
+          title={isPinned ? 'Unpin' : 'Pin'}
+        >
+          <Pin className="h-4 w-4" />
+        </button>
         <button 
           onClick={() => setReplyingToEvent(event)}
           className="p-1.5 text-discord-text-muted hover:bg-discord-hover hover:text-white transition"

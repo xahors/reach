@@ -42,7 +42,6 @@ export const useRoomMessages = (roomId: string | null) => {
     }
 
     // Always check for local echoes if they aren't in the window yet
-    // BUT only if the room supports Detached pending event ordering, otherwise it throws
     // @ts-expect-error: internal property access
     if (room.opts?.pendingEventOrdering === PendingEventOrdering.Detached) {
       const pending = room.getPendingEvents();
@@ -61,6 +60,20 @@ export const useRoomMessages = (roomId: string | null) => {
     return events;
   }, [client, roomId]);
 
+  const jumpToEvent = useCallback(async (eventId: string) => {
+    if (!timelineWindow.current) return;
+
+    setLoading(true);
+    try {
+      await timelineWindow.current.load(eventId, 50);
+      refreshMessages();
+    } catch (err) {
+      console.error(`Failed to jump to event ${eventId}`, err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Effect to manage read markers
   useEffect(() => {
     if (!client || !roomId) {
@@ -73,7 +86,6 @@ export const useRoomMessages = (roomId: string | null) => {
 
     const updateReadMarker = () => {
       // If we already have a marker for this room session, don't move it
-      // This keeps the "New Messages" bar stable as a reference of where you started
       if (readMarkerId) return;
 
       const myUserId = client.getUserId();
@@ -258,7 +270,7 @@ export const useRoomMessages = (roomId: string | null) => {
       }
       timelineWindow.current = null;
     };
-  }, [client, roomId, refreshMessages, messageLoadPolicy]);
+  }, [client, roomId, refreshMessages, messageLoadPolicy, jumpToEvent, readMarkerId]);
 
   const paginate = useCallback(async () => {
     if (!timelineWindow.current || !canPaginate || loading) return;
@@ -329,5 +341,5 @@ export const useRoomMessages = (roomId: string | null) => {
     }
   }, [client, roomId, messages, loading]);
 
-  return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead, readMarkerId };
+  return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead, readMarkerId, jumpToEvent };
 };

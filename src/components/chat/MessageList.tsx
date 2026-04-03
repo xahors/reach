@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
 import { Loader2, ArrowDown } from 'lucide-react';
-
+import { usePinnedEvents } from '../../hooks/usePinnedEvents';
 import { useAppStore } from '../../store/useAppStore';
 
 interface MessageListProps {
@@ -11,7 +11,9 @@ interface MessageListProps {
   onPaginate?: () => Promise<void>;
   canPaginate?: boolean;
   onScrollBottom?: () => void;
+  onJumpToEvent: (eventId: string) => void;
   readMarkerId?: string;
+  roomId: string;
 }
 
 const MessageList: React.FC<MessageListProps> = ({ 
@@ -20,7 +22,9 @@ const MessageList: React.FC<MessageListProps> = ({
   onPaginate, 
   canPaginate,
   onScrollBottom,
-  readMarkerId
+  readMarkerId,
+  onJumpToEvent,
+  roomId
 }) => {
   const { messageLoadPolicy } = useAppStore();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -49,7 +53,7 @@ const MessageList: React.FC<MessageListProps> = ({
     return false;
   }, []);
 
-  const jumpToMessage = useCallback((eventId: string) => {
+  const internalJumpToEvent = useCallback((eventId: string) => {
     const element = document.getElementById(`message-${eventId}`);
     if (element) {
       element.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -57,11 +61,12 @@ const MessageList: React.FC<MessageListProps> = ({
       setTimeout(() => setHighlightedEventId(null), 2000);
     } else {
       console.warn(`Message ${eventId} not found in DOM`);
-      // Future: If not found, we could try to paginate until found
+      // Propagate up if we can't find it locally
+      onJumpToEvent(eventId);
     }
-  }, []);
+  }, [onJumpToEvent]);
 
-  // 1. Safety fallback: Ensure we eventually show the UI even if messages are empty/slow
+  // 1. Safety fallback
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!isReady) setIsReady(true);
@@ -74,46 +79,31 @@ const MessageList: React.FC<MessageListProps> = ({
     if (messages.length === 0) return;
 
     if (!isReady) {
-      // First time messages are loaded for this channel
       if (messageLoadPolicy === 'latest') {
         requestAnimationFrame(() => {
           scrollToBottom();
-          setTimeout(() => {
-            scrollToBottom();
-            onScrollBottom?.();
-          }, 50);
+          setTimeout(() => scrollToBottom(), 50);
         });
-        const timer = setTimeout(() => setIsReady(true), 300);
-        return () => clearTimeout(timer);
       } else {
-        // 'last_read' policy
         requestAnimationFrame(() => {
-          const found = scrollToMarker();
-          if (found) {
-            const timer = setTimeout(() => setIsReady(true), 300);
-            return () => clearTimeout(timer);
-          } else {
-            const timer = setTimeout(() => setIsReady(true), 500);
-            return () => clearTimeout(timer);
-          }
+          scrollToMarker();
         });
       }
+      const timer = setTimeout(() => setIsReady(true), 300);
+      return () => clearTimeout(timer);
     } else if (scrollRef.current && prevScrollHeight !== null) {
-      // Restore scroll position after a pagination load
       const currentHeight = scrollRef.current.scrollHeight;
       scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
       setTimeout(() => setPrevScrollHeight(null), 0);
     }
-  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, onScrollBottom, scrollToMarker]);
+  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, scrollToMarker]);
 
-  // 3. Auto-scroll to bottom on NEW messages
+  // 3. Auto-scroll on new messages
   useEffect(() => {
     if (!isReady || !scrollRef.current || loading || messages.length === 0) return;
     
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-    const isNearBottom = distanceToBottom < 250;
-    
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
     const lastMessage = messages[messages.length - 1];
     const isLocalEcho = lastMessage.getTxnId() && (!lastMessage.getId() || lastMessage.isSending());
 
@@ -125,36 +115,32 @@ const MessageList: React.FC<MessageListProps> = ({
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current || !isReady || loading) return;
-
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     
-    // Pagination trigger (scroll near top)
     if (scrollTop < 150 && canPaginate && onPaginate) {
       setPrevScrollHeight(scrollHeight);
       onPaginate().catch(console.error);
     }
 
-    // Read receipt and Jump-to-Latest trigger
     const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-    const isAtBottom = distanceToBottom < 50;
-    
     setShowJumpToLatest(distanceToBottom > 800);
 
-    if (isAtBottom) {
+    if (distanceToBottom < 50) {
       onScrollBottom?.();
     }
   }, [loading, canPaginate, onPaginate, isReady, onScrollBottom]);
 
-  const renderMessages = () => {
-    const groupedMessages: React.ReactNode[] = [];
+  const RenderedMessages = () => {
+    const { isEventPinned, pinEvent, unpinEvent } = usePinnedEvents(roomId);
     
-    messages.forEach((event, index) => {
+    return messages.map((event, index) => {
       const prevEvent = index > 0 ? messages[index - 1] : null;
       const eventId = event.getId();
-      
+      if (!eventId) return null; // Don't render events without IDs
+
       const isReadMarker = readMarkerId && eventId === readMarkerId;
       const hasNewMessagesBelow = isReadMarker && index < messages.length - 1;
-      const isHighlighted = eventId && eventId === highlightedEventId;
+      const isHighlighted = eventId === highlightedEventId;
       
       let isGrouped = false;
       if (prevEvent) {
@@ -163,23 +149,30 @@ const MessageList: React.FC<MessageListProps> = ({
         const prevTime = prevEvent.getTs();
         const currentTime = event.getTs();
         const fiveMinutes = 5 * 60 * 1000;
-
         if (prevSender === currentSender && (currentTime - prevTime) < fiveMinutes) {
           isGrouped = true;
         }
       }
 
-      groupedMessages.push(
+      return (
         <div 
-          key={eventId || event.getTxnId()} 
-          id={eventId ? `message-${eventId}` : undefined}
+          key={eventId} 
+          id={`message-${eventId}`}
           ref={isReadMarker ? readMarkerRef : null}
           className={`transition-colors duration-1000 ${isHighlighted ? 'bg-discord-accent/20' : ''}`}
         >
           <MessageItem 
             event={event} 
             isGrouped={isGrouped} 
-            onJumpToReply={(replyId) => jumpToMessage(replyId)}
+            onJumpToReply={internalJumpToEvent}
+            isPinned={isEventPinned(eventId)}
+            onPinToggle={(id, isCurrentlyPinned) => {
+              if (isCurrentlyPinned) {
+                unpinEvent(id);
+              } else {
+                pinEvent(id);
+              }
+            }}
           />
           {hasNewMessagesBelow && (
             <div className="flex items-center px-4 py-2">
@@ -191,8 +184,6 @@ const MessageList: React.FC<MessageListProps> = ({
         </div>
       );
     });
-
-    return groupedMessages;
   };
 
   return (
@@ -213,7 +204,7 @@ const MessageList: React.FC<MessageListProps> = ({
             </div>
           )}
           
-          {renderMessages()}
+          <RenderedMessages />
           <div ref={bottomRef} className="h-px w-full" />
         </div>
       </div>
