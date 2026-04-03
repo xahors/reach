@@ -94,14 +94,13 @@ export const useRoomMessages = (roomId: string | null) => {
 
     const onTimelineEvent = (_event: MatrixEvent, evRoom: Room | undefined) => {
       if (evRoom?.roomId === roomId) {
-        // Only paginate forward if we are already at the end of the window
-        // to avoid jumping or unnecessary network requests
-        if (timelineWindow.current && !timelineWindow.current.canPaginate(Direction.Forward)) {
-          timelineWindow.current.paginate(Direction.Forward, 10).catch(() => {});
+        if (timelineWindow.current && timelineWindow.current.canPaginate(Direction.Forward)) {
+          timelineWindow.current.paginate(Direction.Forward, 10).finally(() => {
+            refreshMessages();
+          });
+        } else {
+          refreshMessages();
         }
-        
-        // Use a small timeout to ensure SDK has finished processing
-        setTimeout(() => refreshMessages(), 50);
       }
     };
 
@@ -112,13 +111,11 @@ export const useRoomMessages = (roomId: string | null) => {
     };
 
     const onSync = (state: string) => {
-      // Only trigger initial load if room wasn't available before
       if (state === 'PREPARED' || state === 'SYNCING') {
          const r = client.getRoom(roomId);
          if (r && !currentRoomRef.current) {
            currentRoomRef.current = r;
-           r.on(RoomEvent.Timeline, onTimelineEvent);
-           r.on(RoomEvent.LocalEchoUpdated, refreshMessages);
+           attachListeners(r);
            initTimeline(r);
          }
       }
@@ -127,10 +124,19 @@ export const useRoomMessages = (roomId: string | null) => {
     const onRoom = (r: Room) => {
       if (r.roomId === roomId && !currentRoomRef.current) {
         currentRoomRef.current = r;
-        r.on(RoomEvent.Timeline, onTimelineEvent);
-        r.on(RoomEvent.LocalEchoUpdated, refreshMessages);
+        attachListeners(r);
         initTimeline(r);
       }
+    };
+
+    const attachListeners = (targetRoom: Room) => {
+      targetRoom.on(RoomEvent.Timeline, onTimelineEvent);
+      targetRoom.on(RoomEvent.LocalEchoUpdated, refreshMessages);
+    };
+
+    const detachListeners = (targetRoom: Room) => {
+      targetRoom.removeListener(RoomEvent.Timeline, onTimelineEvent);
+      targetRoom.removeListener(RoomEvent.LocalEchoUpdated, refreshMessages);
     };
 
     const initTimeline = async (targetRoom: Room) => {
@@ -150,16 +156,13 @@ export const useRoomMessages = (roomId: string | null) => {
           
           await timelineWindow.current.load(lastEventId, 50);
           
-          // Limit pagination attempts to prevent spam
           let forwardAttempts = 0;
           while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 3) {
             await timelineWindow.current.paginate(Direction.Forward, 50);
             forwardAttempts++;
           }
         } else {
-          // Load around the last read marker (Fully Read) or read receipt
           const myUserId = client.getUserId();
-          // fully_read marker is often more accurate for "where I left off"
           const readMarkerId = targetRoom.getAccountData('m.fully_read')?.getContent()?.event_id;
           const readReceiptId = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
           
@@ -167,13 +170,10 @@ export const useRoomMessages = (roomId: string | null) => {
           
           if (targetEventId) {
             await timelineWindow.current.load(targetEventId, 50);
-            
-            // Fetch a bit of forward context
             if (timelineWindow.current.canPaginate(Direction.Forward)) {
               await timelineWindow.current.paginate(Direction.Forward, 25);
             }
           } else {
-            // Fallback to latest
             const liveEvents = targetRoom.getLiveTimeline().getEvents();
             const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
             await timelineWindow.current.load(lastEventId, 50);
@@ -193,28 +193,23 @@ export const useRoomMessages = (roomId: string | null) => {
       }
     };
 
-    // Global client listeners
-    client.on(RoomEvent.Timeline, onTimelineEvent);
+    // Listen for decryption events globally as they can happen anytime
     client.on(MatrixEventEvent.Decrypted, onEventDecrypted);
     client.on(ClientEvent.Sync, onSync);
     client.on(ClientEvent.Room, onRoom);
 
-    // Room specific listeners
     if (room) {
-      room.on(RoomEvent.Timeline, onTimelineEvent);
-      room.on(RoomEvent.LocalEchoUpdated, refreshMessages);
+      attachListeners(room);
       initTimeline(room);
     }
 
     return () => {
-      client.removeListener(RoomEvent.Timeline, onTimelineEvent);
       client.removeListener(MatrixEventEvent.Decrypted, onEventDecrypted);
       client.removeListener(ClientEvent.Sync, onSync);
       client.removeListener(ClientEvent.Room, onRoom);
       
       if (currentRoomRef.current) {
-        currentRoomRef.current.removeListener(RoomEvent.Timeline, onTimelineEvent);
-        currentRoomRef.current.removeListener(RoomEvent.LocalEchoUpdated, refreshMessages);
+        detachListeners(currentRoomRef.current);
       }
       timelineWindow.current = null;
     };
@@ -276,17 +271,12 @@ export const useRoomMessages = (roomId: string | null) => {
     
     if (!eventId || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
     
-    // Throttle: Only send if it's a new event ID AND we haven't sent one in the last 3 seconds
     const now = Date.now();
     if (eventId === lastSentReceiptIdRef.current || (now - lastReceiptTimeRef.current < 3000)) return;
 
     try {
       lastSentReceiptIdRef.current = eventId;
       lastReceiptTimeRef.current = now;
-      
-      // setRoomReadMarkers updates:
-      // 1. Fully read marker (private, where you left off)
-      // 2. Read receipt (public, others see you read up to here)
       await client.setRoomReadMarkers(roomId, eventId, lastMessage);
     } catch (error) {
       console.error('Failed to update read markers:', error);
