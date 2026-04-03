@@ -71,14 +71,22 @@ const MessageList: React.FC<MessageListProps> = ({
     }
   }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, onScrollBottom]);
 
-  // 3. Auto-scroll to bottom on NEW messages (only if near bottom)
+  // 3. Auto-scroll to bottom on NEW messages
   useEffect(() => {
-    if (!isReady || !scrollRef.current || loading) return;
+    if (!isReady || !scrollRef.current || loading || messages.length === 0) return;
     
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
+    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+    const isNearBottom = distanceToBottom < 250;
     
-    if (isNearBottom) {
+    // Logic for auto-scrolling:
+    // 1. User is already near the bottom
+    // 2. The LATEST message is a "local echo" (transaction ID but no event ID) 
+    //    which means the current user just sent it.
+    const lastMessage = messages[messages.length - 1];
+    const isLocalEcho = lastMessage.getTxnId() && !lastMessage.getId();
+
+    if (isNearBottom || isLocalEcho) {
       scrollToBottom(true);
       onScrollBottom?.();
     }
