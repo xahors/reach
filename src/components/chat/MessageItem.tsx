@@ -20,6 +20,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   const isRedacted = event.isRedacted();
   const isMe = event.getSender() === userId;
 
+  const replyEventId = event.replyEventId;
+  const room = client?.getRoom(event.getRoomId() || '');
+  const repliedToEvent = replyEventId ? room?.findEventById(replyEventId) : null;
+
   const getAvatar = () => {
     if (!client || !sender || typeof sender.getAvatarUrl !== 'function') return null;
     try {
@@ -82,6 +86,26 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
       >
         <span className="truncate max-w-xs text-xs">📄 {event.getContent().body || 'Download File'}</span>
       </a>
+    );
+  };
+
+  const renderReply = () => {
+    if (!repliedToEvent) return null;
+    const replySender = repliedToEvent.sender;
+    const replyContent = repliedToEvent.getClearContent()?.body || repliedToEvent.getContent().body;
+    
+    return (
+      <div className="mb-1 flex items-center space-x-2 opacity-60 hover:opacity-100 transition cursor-pointer overflow-hidden max-w-full">
+        <div className="h-4 w-4 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-[8px] text-white font-bold overflow-hidden">
+          {replySender?.getAvatarUrl(client!.getHomeserverUrl(), 16, 16, 'crop', undefined, true) ? (
+            <img src={replySender.getAvatarUrl(client!.getHomeserverUrl(), 16, 16, 'crop', undefined, true)!} alt="" className="h-full w-full object-cover" />
+          ) : (
+            replySender?.name?.charAt(0).toUpperCase() || '?'
+          )}
+        </div>
+        <span className="text-xs font-bold text-white shrink-0">@{replySender?.name || replySender?.userId}</span>
+        <span className="truncate text-xs text-discord-text-muted italic">{replyContent}</span>
+      </div>
     );
   };
 
@@ -155,6 +179,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
            <span className="text-[10px] text-discord-text-muted">{timestamp}</span>
         </div>
         <div className="ml-10 flex flex-col text-base text-discord-text">
+          {renderReply()}
           <div className="flex-1">{content}</div>
           {media}
           {isFailed && <span className="mt-1 text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
@@ -184,6 +209,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
           {isFailed && <span className="text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
         </div>
         <div className={`text-base text-discord-text ${isFailed ? 'text-red-400' : ''}`}>
+          {renderReply()}
           <div>{content}</div>
           {media}
         </div>

@@ -61,7 +61,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     e.preventDefault();
     if (!message.trim() || !client) return;
 
-    const content = message.trim();
+    const contentText = message.trim();
     setMessage('');
     setError(null);
     setShowEmojiPicker(false);
@@ -72,10 +72,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const editContent: any = {
           msgtype: MsgType.Text,
-          body: ` * ${content}`,
+          body: ` * ${contentText}`,
           "m.new_content": {
             msgtype: MsgType.Text,
-            body: content,
+            body: contentText,
           },
           "m.relates_to": {
             rel_type: "m.replace",
@@ -85,18 +85,28 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         await client.sendMessage(roomId, editContent);
         setEditingEvent(null);
       } else if (replyingToEvent) {
+        const replyContent = {
+          msgtype: MsgType.Text,
+          body: contentText,
+          "m.relates_to": {
+            "m.in_reply_to": {
+              event_id: replyingToEvent.getId(),
+            },
+          },
+        };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (client as any).replyEvent(roomId, replyingToEvent, content, content);
+        await client.sendMessage(roomId, replyContent as any);
         setReplyingToEvent(null);
       } else {
         await client.sendMessage(roomId, {
           msgtype: MsgType.Text,
-          body: content,
+          body: contentText,
         });
       }
     } catch (err) {
       console.error('Failed to send message:', err);
-      setMessage(content);
+      // Restore message on failure
+      setMessage(contentText);
       
       const messageStr = err instanceof Error ? err.message : '';
       if (messageStr.includes('encryption') || !matrixService.isCryptoEnabled()) {
