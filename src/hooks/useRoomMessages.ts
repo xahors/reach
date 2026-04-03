@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, PendingEventOrdering, ClientEvent } from 'matrix-js-sdk';
+import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
 import { useAppStore } from '../store/useAppStore';
@@ -7,6 +7,7 @@ import { useAppStore } from '../store/useAppStore';
 export const useRoomMessages = (roomId: string | null) => {
   const client = useMatrixClient();
   const { messageLoadPolicy } = useAppStore();
+  const [readMarkerId, setReadMarkerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [canPaginate, setCanPaginate] = useState(true);
@@ -40,10 +41,9 @@ export const useRoomMessages = (roomId: string | null) => {
       events = [...room.getLiveTimeline().getEvents()];
     }
 
-    // Include local echoes if detached
-    // @ts-expect-error: internal property access
-    if (room.opts?.pendingEventOrdering === PendingEventOrdering.Detached) {
-      const pending = room.getPendingEvents();
+    // Always check for local echoes if they aren't in the window yet
+    const pending = room.getPendingEvents();
+    if (pending && pending.length > 0) {
       const eventIds = new Set(events.map(e => e.getId()).filter(Boolean));
       const txnIds = new Set(events.map(e => e.getTxnId()).filter(Boolean));
 
@@ -57,6 +57,40 @@ export const useRoomMessages = (roomId: string | null) => {
     return events;
   }, [client, roomId]);
 
+  // Effect to manage read markers
+  useEffect(() => {
+    if (!client || !roomId) {
+      setReadMarkerId(null);
+      return;
+    }
+
+    const room = client.getRoom(roomId);
+    if (!room) return;
+
+    const updateReadMarker = () => {
+      const myUserId = client.getUserId();
+      const mReadMarker = room.getAccountData('m.fully_read')?.getContent()?.event_id;
+      const mReadReceipt = myUserId ? room.getEventReadUpTo(myUserId) : null;
+      setReadMarkerId(mReadMarker || mReadReceipt || null);
+    };
+
+    updateReadMarker();
+    
+    const onAccountData = (event: MatrixEvent) => {
+      if (event.getType() === 'm.fully_read') {
+        updateReadMarker();
+      }
+    };
+
+    room.on(RoomEvent.AccountData, onAccountData);
+    client.on(ClientEvent.Sync, updateReadMarker);
+
+    return () => {
+      room.removeListener(RoomEvent.AccountData, onAccountData);
+      client.removeListener(ClientEvent.Sync, updateReadMarker);
+    };
+  }, [client, roomId]);
+
   useEffect(() => {
     const allEvents = getEvents();
     const filtered = allEvents.filter((event) => {
@@ -68,7 +102,6 @@ export const useRoomMessages = (roomId: string | null) => {
         type === 'm.room.member'
       );
       
-      // Filter out the replacement events themselves (they aggregate onto the original)
       const isReplacement = event.isRelation('m.replace');
       
       return isDisplayable && !isReplacement;
@@ -163,10 +196,10 @@ export const useRoomMessages = (roomId: string | null) => {
           }
         } else {
           const myUserId = client.getUserId();
-          const readMarkerId = targetRoom.getAccountData('m.fully_read')?.getContent()?.event_id;
-          const readReceiptId = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
+          const readMarkerIdFromRoom = targetRoom.getAccountData('m.fully_read')?.getContent()?.event_id;
+          const readReceiptIdFromRoom = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
           
-          const targetEventId = readMarkerId || readReceiptId;
+          const targetEventId = readMarkerIdFromRoom || readReceiptIdFromRoom;
           
           if (targetEventId) {
             await timelineWindow.current.load(targetEventId, 50);
@@ -193,7 +226,6 @@ export const useRoomMessages = (roomId: string | null) => {
       }
     };
 
-    // Listen for decryption events globally as they can happen anytime
     client.on(MatrixEventEvent.Decrypted, onEventDecrypted);
     client.on(ClientEvent.Sync, onSync);
     client.on(ClientEvent.Room, onRoom);
@@ -284,5 +316,5 @@ export const useRoomMessages = (roomId: string | null) => {
     }
   }, [client, roomId, messages, loading]);
 
-  return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead };
+  return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead, readMarkerId };
 };

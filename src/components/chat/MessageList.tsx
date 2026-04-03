@@ -11,6 +11,7 @@ interface MessageListProps {
   onPaginate?: () => Promise<void>;
   canPaginate?: boolean;
   onScrollBottom?: () => void;
+  readMarkerId?: string;
 }
 
 const MessageList: React.FC<MessageListProps> = ({ 
@@ -18,11 +19,13 @@ const MessageList: React.FC<MessageListProps> = ({
   loading, 
   onPaginate, 
   canPaginate,
-  onScrollBottom
+  onScrollBottom,
+  readMarkerId
 }) => {
   const { messageLoadPolicy } = useAppStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const readMarkerRef = useRef<HTMLDivElement>(null);
   const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -35,6 +38,14 @@ const MessageList: React.FC<MessageListProps> = ({
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
     }
+  }, []);
+
+  const scrollToMarker = useCallback(() => {
+    if (readMarkerRef.current) {
+      readMarkerRef.current.scrollIntoView({ block: 'center' });
+      return true;
+    }
+    return false;
   }, []);
 
   // 1. Safety fallback: Ensure we eventually show the UI even if messages are empty/slow
@@ -59,17 +70,30 @@ const MessageList: React.FC<MessageListProps> = ({
             onScrollBottom?.();
           }, 50);
         });
+        const timer = setTimeout(() => setIsReady(true), 300);
+        return () => clearTimeout(timer);
+      } else {
+        // 'last_read' policy
+        requestAnimationFrame(() => {
+          const found = scrollToMarker();
+          if (found) {
+            const timer = setTimeout(() => setIsReady(true), 300);
+            return () => clearTimeout(timer);
+          } else {
+            // If marker not in current window, maybe fallback to bottom or stay at top
+            // For now, if we can't find it, we wait a bit or just show what we have
+            const timer = setTimeout(() => setIsReady(true), 500);
+            return () => clearTimeout(timer);
+          }
+        });
       }
-      
-      const timer = setTimeout(() => setIsReady(true), 300);
-      return () => clearTimeout(timer);
     } else if (scrollRef.current && prevScrollHeight !== null) {
       // Restore scroll position after a pagination load
       const currentHeight = scrollRef.current.scrollHeight;
       scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
       setTimeout(() => setPrevScrollHeight(null), 0);
     }
-  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, onScrollBottom]);
+  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, onScrollBottom, scrollToMarker]);
 
   // 3. Auto-scroll to bottom on NEW messages
   useEffect(() => {
@@ -79,12 +103,9 @@ const MessageList: React.FC<MessageListProps> = ({
     const distanceToBottom = scrollHeight - scrollTop - clientHeight;
     const isNearBottom = distanceToBottom < 250;
     
-    // Logic for auto-scrolling:
-    // 1. User is already near the bottom
-    // 2. The LATEST message is a "local echo" (transaction ID but no event ID) 
-    //    which means the current user just sent it.
     const lastMessage = messages[messages.length - 1];
-    const isLocalEcho = lastMessage.getTxnId() && !lastMessage.getId();
+    // A message is a local echo if it has a txnId but is still in sending status or hasn't got an ID yet
+    const isLocalEcho = lastMessage.getTxnId() && (!lastMessage.getId() || lastMessage.isSending());
 
     if (isNearBottom || isLocalEcho) {
       scrollToBottom(true);
@@ -119,6 +140,8 @@ const MessageList: React.FC<MessageListProps> = ({
     
     messages.forEach((event, index) => {
       const prevEvent = index > 0 ? messages[index - 1] : null;
+      const eventId = event.getId();
+      const isReadMarker = readMarkerId && eventId === readMarkerId;
       
       let isGrouped = false;
       if (prevEvent) {
@@ -134,7 +157,16 @@ const MessageList: React.FC<MessageListProps> = ({
       }
 
       groupedMessages.push(
-        <MessageItem key={event.getId() || event.getTxnId()} event={event} isGrouped={isGrouped} />
+        <div key={eventId || event.getTxnId()} ref={isReadMarker ? readMarkerRef : null}>
+          <MessageItem event={event} isGrouped={isGrouped} />
+          {isReadMarker && (
+            <div className="flex items-center px-4 py-2">
+              <div className="h-px flex-1 bg-discord-accent opacity-50" />
+              <span className="mx-2 text-[10px] font-bold uppercase text-discord-accent">New Messages</span>
+              <div className="h-px flex-1 bg-discord-accent opacity-50" />
+            </div>
+          )}
+        </div>
       );
     });
 
