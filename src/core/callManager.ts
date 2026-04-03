@@ -6,15 +6,14 @@ import { useAppStore } from '../store/useAppStore';
 
 class CallManager {
   private currentCall: MatrixCall | null = null;
+  private audioContext: AudioContext | null = null;
 
   init() {
     const client = matrixService.getClient();
     if (!client) return;
 
-    // In matrix-js-sdk v41, CallEvent.Incoming was renamed/moved.
     client.on(CallEventHandlerEvent.Incoming, (call: MatrixCall) => {
       console.log('Incoming call...', call);
-      // If we are already in a call, reject the new one
       if (this.currentCall) {
         call.reject();
         return;
@@ -22,24 +21,84 @@ class CallManager {
 
       this.currentCall = call;
       useAppStore.getState().setIncomingCall(call);
-
-      call.on(CallEvent.Hangup, () => {
-        this.clearCall();
-      });
-      call.on(CallEvent.Error, (err) => {
-        console.error('Call error', err);
-        this.clearCall();
-      });
-      call.on(CallEvent.Replaced, (newCall: MatrixCall) => {
-        this.currentCall = newCall;
-        useAppStore.getState().setActiveCall(newCall);
-      });
-
-      // Handle remote mute changes
-      call.on(CallEvent.RemoteHoldUnhold, () => {
-        // Just refresh UI state if needed
-      });
+      this.setupCallListeners(call);
     });
+  }
+
+  private setupCallListeners(call: MatrixCall) {
+    call.on(CallEvent.Hangup, () => {
+      this.clearCall();
+    });
+    call.on(CallEvent.Error, (err) => {
+      console.error('Call error', err);
+      this.clearCall();
+    });
+    call.on(CallEvent.Replaced, (newCall: MatrixCall) => {
+      this.currentCall = newCall;
+      useAppStore.getState().setActiveCall(newCall);
+      this.setupCallListeners(newCall);
+    });
+    call.on(CallEvent.State, (state) => {
+      if (state === 'connected') {
+        this.playFeedbackSound('connect');
+      }
+    });
+  }
+
+  private getAudioContext(): AudioContext | null {
+    if (!this.audioContext) {
+      try {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.audioContext = new AudioContextClass();
+      } catch (e) {
+        console.warn('Failed to create AudioContext', e);
+      }
+    }
+    
+    if (this.audioContext?.state === 'suspended') {
+      this.audioContext.resume().catch(console.warn);
+    }
+    
+    return this.audioContext;
+  }
+
+  private playFeedbackSound(type: 'mute' | 'unmute' | 'connect') {
+    const context = this.getAudioContext();
+    if (!context) return;
+
+    try {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = 'sine';
+      
+      let startFreq = 400;
+      let endFreq = 600;
+      let duration = 0.1;
+
+      if (type === 'mute') {
+        startFreq = 600;
+        endFreq = 400;
+      } else if (type === 'connect') {
+        startFreq = 500;
+        endFreq = 800;
+        duration = 0.2;
+      }
+
+      oscillator.frequency.setValueAtTime(startFreq, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(endFreq, context.currentTime + duration);
+
+      gain.gain.setValueAtTime(0.1, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + duration);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start();
+      oscillator.stop(context.currentTime + duration);
+    } catch (e) {
+      console.warn('Audio play failed', e);
+    }
   }
 
   async placeCall(roomId: string, type: 'voice' | 'video') {
@@ -52,24 +111,16 @@ class CallManager {
 
       this.currentCall = call;
       useAppStore.getState().setActiveCall(call);
-
-      // Set initial mute states based on type
+      
       if (type === 'voice') {
         useAppStore.getState().setCameraOff(true);
       } else {
         useAppStore.getState().setCameraOff(false);
       }
 
-      call.on(CallEvent.Hangup, () => {
-        this.clearCall();
-      });
-      call.on(CallEvent.Error, (err) => {
-        console.error('Call error', err);
-        this.clearCall();
-      });
-
-      // Second param 'video' determines if the initial getUserMedia includes video.
-      // If false, camera permission is only asked later when setLocalVideoMuted(false) is called.
+      this.setupCallListeners(call);
+      
+      // Request permissions immediately for the chosen type
       await call.placeCall(true, type === 'video');
     } catch (err) {
       console.error('Error placing call:', err);
@@ -99,42 +150,6 @@ class CallManager {
     }
   }
 
-  private playFeedbackSound(type: 'mute' | 'unmute') {
-    try {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const context = new AudioContextClass();
-      
-      if (context.state === 'suspended') {
-        context.resume();
-      }
-
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-
-      oscillator.type = 'sine';
-      // Mute: Higher to Lower, Unmute: Lower to Higher
-      const startFreq = type === 'mute' ? 600 : 400;
-      const endFreq = type === 'mute' ? 400 : 600;
-
-      oscillator.frequency.setValueAtTime(startFreq, context.currentTime);
-      oscillator.frequency.exponentialRampToValueAtTime(endFreq, context.currentTime + 0.1);
-
-      gain.gain.setValueAtTime(0.1, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
-
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-
-      oscillator.start();
-      oscillator.stop(context.currentTime + 0.1);
-      
-      // Close context after sound finished
-      setTimeout(() => context.close(), 200);
-    } catch (e) {
-      console.warn('Audio feedback failed', e);
-    }
-  }
-
   setMuted(muted: boolean) {
     if (this.currentCall) {
       this.currentCall.setMicrophoneMuted(muted);
@@ -144,13 +159,8 @@ class CallManager {
 
   setVideoMuted(muted: boolean) {
     if (this.currentCall) {
-      // If we are unmuting video, ensure we have a stream with video
-      if (!muted && !this.currentCall.hasLocalUserMediaVideoTrack) {
-        console.log("Upgrading call to include video...");
-        this.currentCall.setLocalVideoMuted(false);
-      } else {
-        this.currentCall.setLocalVideoMuted(muted);
-      }
+      // In JS SDK, unmuting video when no track exists should trigger negotiation
+      this.currentCall.setLocalVideoMuted(muted);
       this.playFeedbackSound(muted ? 'mute' : 'unmute');
     }
   }
