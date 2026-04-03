@@ -1,18 +1,20 @@
 # Reach 🚀
 
+> [!WARNING]
+> **Work in Progress:** Reach is currently in active development. Features are being added and refined daily. Expect frequent updates and potential breaking changes.
+
 Reach is a modern, high-performance, Discord-inspired chat application built on the **Matrix Protocol**. It combines the decentralized, secure foundation of Matrix with a familiar, gamer-centric user experience.
 
 ![Reach Banner](https://raw.githubusercontent.com/matrix-org/matrix-js-sdk/master/logo.png) *(Placeholder for app banner/screenshot)*
 
-## ✨ Key Features
+## ✨ Current Features
 
-- **🎮 Discord-like Interface:** Familiar navigation with Spaces (Servers), Channels, and Member lists.
-- **🛡️ End-to-End Encryption (E2EE):** Full support for secure communication, including cross-signing and session recovery via Security Phrases/Recovery Keys.
-- **📞 VoIP (Voice & Video):** Integrated calling capabilities powered by the Matrix SDK.
-- **🌌 Matrix Spaces:** First-class support for Spaces to organize your communities and rooms.
-- **💬 Real-time Sync:** Instant message delivery and presence updates using the Matrix sync loop.
-- **📱 Responsive Design:** Built with Tailwind CSS v4 for a fluid, high-performance UI.
-- **🧩 Advanced Crypto:** Leverages `@matrix-org/matrix-sdk-crypto-wasm` for robust, high-performance encryption.
+- **🎮 Discord-inspired Interface:** Seamless navigation through your Matrix Spaces and Rooms.
+- **🛡️ Secure by Default:** Full End-to-End Encryption (E2EE) powered by the high-performance Rust SDK.
+- **📞 Integrated VoIP:** Voice and video calling support with a draggable, flexible call interface.
+- **💬 Real-time Messaging:** Instant message delivery, local echoes, and real-time member presence.
+- **😀 Emoji Support:** Full emoji picker integrated into the chat experience.
+- **🧩 Advanced Session Recovery:** Robust support for cross-signing and secure session recovery using Security Phrases.
 
 ---
 
@@ -22,7 +24,7 @@ Reach is a modern, high-performance, Discord-inspired chat application built on 
 - **Language:** [TypeScript](https://www.typescriptlang.org/)
 - **Styling:** [Tailwind CSS v4](https://tailwindcss.com/)
 - **State Management:** [Zustand](https://github.com/pmndrs/zustand)
-- **Matrix SDK:** [matrix-js-sdk](https://github.com/matrix-org/matrix-js-sdk) + [WASM Crypto](https://github.com/matrix-org/matrix-rust-sdk-crypto-js)
+- **Matrix SDK:** [matrix-js-sdk](https://github.com/matrix-org/matrix-js-sdk) + [Rust WASM Crypto](https://github.com/matrix-org/matrix-sdk-crypto-wasm)
 - **Icons:** [Lucide React](https://lucide.dev/)
 
 ---
@@ -30,13 +32,13 @@ Reach is a modern, high-performance, Discord-inspired chat application built on 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v20+ recommended)
+- [Node.js](https://nodejs.org/) (v22+ recommended)
 - [npm](https://www.npmjs.com/)
 
 ### Installation
 1. Clone the repository:
    ```bash
-   git clone <your-repo-url>
+   git clone git@github.com:xahors/reach.git
    cd reach
    ```
 2. Install dependencies:
@@ -49,25 +51,14 @@ Reach is a modern, high-performance, Discord-inspired chat application built on 
    ```
 4. Access the app at `http://localhost:5173`.
 
-### Environment Configuration
-The application is pre-configured to work with standard Matrix homeservers. For production deployments, ensure your homeserver supports [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) and the necessary Matrix API versions.
-
 ---
 
 ## 🏗 Project Architecture
 
-Reach follows a modular architecture designed for performance and maintainability:
-
-- **`src/core/`**: Core logic and service singletons.
-  - `matrix.ts`: Matrix client initialization and low-level SDK handling.
-  - `callManager.ts`: VoIP call orchestration.
-- **`src/store/`**: Centralized state management using Zustand.
-- **`src/hooks/`**: Specialized React hooks for Matrix data (e.g., `useMatrixSync`, `useRoomMessages`).
-- **`src/components/`**: Feature-organized UI components.
-  - `auth/`: Login and Security Recovery.
-  - `chat/`: Messaging, lists, and inputs.
-  - `calls/`: Active call overlays and controls.
-  - `layout/`: Sidebar, Channel List, and Member List.
+- **`src/core/`**: Service singletons for Matrix client and Call management.
+- **`src/store/`**: Global application state (active room, space, etc.).
+- **`src/hooks/`**: Custom hooks for real-time synchronization and data fetching.
+- **`src/components/`**: Modular UI components organized by feature (chat, calls, layout, auth).
 
 ---
 
@@ -75,20 +66,8 @@ Reach follows a modular architecture designed for performance and maintainabilit
 
 Reach prioritizes your privacy:
 - **Zero-knowledge Encryption:** Messages are decrypted locally in your browser.
-- **WASM-powered Crypto:** Secure and fast cryptographic operations.
-- **Local Session Storage:** Your credentials and session tokens are stored securely in the browser's storage.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- **WASM-powered Crypto:** Secure and fast cryptographic operations using the Matrix Rust SDK.
+- **Local Session Storage:** Your credentials and session tokens are stored securely in your browser's local storage.
 
 ---
 
