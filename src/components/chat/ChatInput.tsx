@@ -5,6 +5,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { matrixService } from '../../core/matrix';
 import { PlusCircle, Gift, StickyNote, Smile, ShieldAlert, X, Reply, Pencil } from 'lucide-react';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
+import StickerPicker from './StickerPicker';
+import type { Sticker } from '../../hooks/useStickerPacks';
 
 interface ChatInputProps {
   roomId: string;
@@ -14,6 +16,7 @@ interface ChatInputProps {
 const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const [message, setMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const client = useMatrixClient();
   const { 
@@ -25,6 +28,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   } = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const stickerPickerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -46,8 +50,12 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(target)) {
         setShowEmojiPicker(false);
+      }
+      if (stickerPickerRef.current && !stickerPickerRef.current.contains(target)) {
+        setShowStickerPicker(false);
       }
     };
 
@@ -65,12 +73,12 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     setMessage('');
     setError(null);
     setShowEmojiPicker(false);
+    setShowStickerPicker(false);
 
     try {
       if (editingEvent) {
         const originalEventId = editingEvent.getId();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const editContent: any = {
+        const editContent = {
           msgtype: MsgType.Text,
           body: ` * ${contentText}`,
           "m.new_content": {
@@ -82,6 +90,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
             event_id: originalEventId,
           },
         };
+        // @ts-expect-error: raw object might not match deep SDK type
         await client.sendMessage(roomId, editContent);
         setEditingEvent(null);
       } else if (replyingToEvent) {
@@ -94,8 +103,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
             },
           },
         };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await client.sendMessage(roomId, replyContent as any);
+        // @ts-expect-error: raw object might not match deep SDK type
+        await client.sendMessage(roomId, replyContent);
         setReplyingToEvent(null);
       } else {
         await client.sendMessage(roomId, {
@@ -105,7 +114,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
       }
     } catch (err) {
       console.error('Failed to send message:', err);
-      // Restore message on failure
       setMessage(contentText);
       
       const messageStr = err instanceof Error ? err.message : '';
@@ -114,6 +122,23 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
       } else {
         setError(`Failed to send: ${messageStr || 'Unknown error'}`);
       }
+    }
+  };
+
+  const handleSendSticker = async (sticker: Sticker) => {
+    if (!client || !roomId) return;
+    setShowStickerPicker(false);
+    
+    try {
+      // @ts-expect-error: m.sticker is a custom type
+      await client.sendEvent(roomId, 'm.sticker', {
+        body: sticker.body,
+        url: sticker.url,
+        info: sticker.info
+      });
+    } catch (err) {
+      console.error('Failed to send sticker:', err);
+      setError('Failed to send sticker.');
     }
   };
 
@@ -134,8 +159,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mediaContent: any = {
+      const mediaContent = {
         msgtype: isImage ? MsgType.Image : isVideo ? MsgType.Video : MsgType.File,
         body: file.name,
         url: mxcUrl,
@@ -144,6 +168,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           size: file.size,
         }
       };
+      // @ts-expect-error: raw object might not match deep SDK type
       await client.sendMessage(roomId, mediaContent);
     } catch (err) {
       console.error('File upload failed:', err);
@@ -209,6 +234,15 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           />
         </div>
       )}
+
+      {showStickerPicker && (
+        <div 
+          ref={stickerPickerRef}
+          className="absolute bottom-20 right-4 z-50"
+        >
+          <StickerPicker onSelect={handleSendSticker} />
+        </div>
+      )}
       
       {error && (
         <div className="mb-2 flex items-center justify-between rounded bg-red-500/10 p-2 text-xs text-red-400">
@@ -253,12 +287,22 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
            <button type="button" className="hover:text-discord-text transition">
              <Gift className="h-6 w-6" />
            </button>
-           <button type="button" className="hover:text-discord-text transition">
+           <button 
+             type="button" 
+             onClick={() => {
+               setShowStickerPicker(!showStickerPicker);
+               setShowEmojiPicker(false);
+             }}
+             className={`transition ${showStickerPicker ? 'text-discord-accent' : 'hover:text-discord-text'}`}
+           >
              <StickyNote className="h-6 w-6" />
            </button>
            <button 
              type="button" 
-             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+             onClick={() => {
+               setShowEmojiPicker(!showEmojiPicker);
+               setShowStickerPicker(false);
+             }}
              className={`transition ${showEmojiPicker ? 'text-discord-accent' : 'hover:text-discord-text'}`}
            >
              <Smile className="h-6 w-6" />

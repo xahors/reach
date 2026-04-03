@@ -46,12 +46,27 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped }) => {
   };
 
   const renderMedia = () => {
-    const msgtype = event.getContent().msgtype;
-    const url = event.getContent().url;
+    const type = event.getType();
+    const content = event.getContent();
+    const msgtype = content.msgtype;
+    const url = content.url;
+    
     if (!url || !client) return null;
 
     const httpUrl = client.mxcUrlToHttp(url, 400, 400, 'scale', false, true);
     if (!httpUrl) return null;
+
+    if (type === 'm.sticker') {
+      return (
+        <div className="mt-2 max-w-[160px] overflow-hidden">
+          <img 
+            src={httpUrl} 
+            alt={content.body || 'Sticker'} 
+            className="h-auto w-full object-contain"
+          />
+        </div>
+      );
+    }
 
     if (msgtype === 'm.image') {
       return (

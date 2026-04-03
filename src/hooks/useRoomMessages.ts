@@ -111,7 +111,8 @@ export const useRoomMessages = (roomId: string | null) => {
         type === 'm.room.message' || 
         type === 'm.room.encrypted' ||
         type === 'm.call.invite' ||
-        type === 'm.room.member'
+        type === 'm.room.member' ||
+        type === 'm.sticker'
       );
       
       const isReplacement = event.isRelation('m.replace');
