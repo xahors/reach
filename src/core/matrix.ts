@@ -59,10 +59,11 @@ class MatrixService {
           if (!this.tempRecoveryKey) return null;
           const rawInput = this.tempRecoveryKey.trim();
           const keyId = Object.keys(keys)[0];
+          const keyInfo = keys[keyId];
           
           console.log(`SDK requested secret key for ID: ${keyId}`);
 
-          // If rawInput starts with 'E' and is long, it's likely a recovery key
+          // 1. Check if it's a recovery key (Base58 starting with 'E')
           if (rawInput.startsWith('E') && rawInput.length > 40) {
             try {
               const { decodeRecoveryKey } = await import("matrix-js-sdk/lib/crypto-api/recovery-key.js");
@@ -70,12 +71,29 @@ class MatrixService {
               console.log("Providing decoded Recovery Key bytes to SDK.");
               return [keyId, decoded];
             } catch (e) {
-              console.warn("Decoding recovery key failed, falling back to raw bytes:", e);
+              console.warn("Decoding recovery key failed, falling back to treating as passphrase:", e);
             }
           }
 
-          // Otherwise treat as security phrase (passphrase)
-          console.log("Providing Security Phrase bytes to SDK.");
+          // 2. If keyInfo has passphrase data, derive the key using the SDK helper
+          if (keyInfo.passphrase) {
+            try {
+              const { deriveRecoveryKeyFromPassphrase } = await import("matrix-js-sdk/lib/crypto-api/index.js");
+              console.log("Deriving key from Security Phrase...");
+              const derivedKey = await deriveRecoveryKeyFromPassphrase(
+                rawInput,
+                keyInfo.passphrase.salt,
+                keyInfo.passphrase.iterations
+              );
+              console.log("Providing derived passphrase key to SDK.");
+              return [keyId, derivedKey];
+            } catch (e) {
+              console.error("Failed to derive key from passphrase:", e);
+            }
+          }
+
+          // 3. Fallback: Treat as raw bytes (usually fails for passphrase-based keys but good for manual keys)
+          console.log("Providing raw bytes to SDK (fallback).");
           return [keyId, new TextEncoder().encode(rawInput)];
         }
       }
