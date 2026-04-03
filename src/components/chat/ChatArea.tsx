@@ -4,13 +4,14 @@ import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import MessageList from './MessageList';
 import ChatInput from './ChatInput';
-import { Hash, Bell, Pin, Users, Search, Inbox, HelpCircle, Phone, Video, Trash2 } from 'lucide-react';
+import ChannelDetails from './ChannelDetails';
+import { Hash, Bell, Pin, Users, Search, Inbox, HelpCircle, Phone, Video } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 
 const ChatArea: React.FC = () => {
-  const { activeRoomId } = useAppStore();
+  const { activeRoomId, isChannelDetailsOpen, setChannelDetailsOpen } = useAppStore();
   const client = useMatrixClient();
-  const { messages, redactAllMyMessages, loading } = useRoomMessages(activeRoomId);
+  const { messages } = useRoomMessages(activeRoomId);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
@@ -40,7 +41,10 @@ const ChatArea: React.FC = () => {
     <div className="flex flex-1 flex-col bg-discord-dark overflow-hidden">
       {/* Room Header */}
       <div className="flex h-12 items-center justify-between px-4 shadow-sm">
-        <div className="flex items-center overflow-hidden">
+        <div 
+          className="flex items-center overflow-hidden cursor-pointer hover:bg-discord-hover/50 px-2 py-1 rounded transition"
+          onClick={() => setChannelDetailsOpen(!isChannelDetailsOpen)}
+        >
           <Hash className="mr-2 h-6 w-6 text-discord-text-muted" />
           <span className="truncate text-base font-bold text-white">{activeRoom.name}</span>
         </div>
@@ -52,14 +56,6 @@ const ChatArea: React.FC = () => {
           <button className="hover:text-discord-text transition"><Bell className="h-6 w-6" /></button>
           <button className="hover:text-discord-text transition"><Pin className="h-6 w-6" /></button>
           <button className="hover:text-discord-text transition"><Users className="h-6 w-6" /></button>
-          <button 
-            onClick={redactAllMyMessages} 
-            disabled={loading}
-            className={`hover:text-red-500 transition ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title="Delete all my messages in this channel"
-          >
-            <Trash2 className="h-6 w-6" />
-          </button>
           
           <div className="relative">
             <input
@@ -75,11 +71,18 @@ const ChatArea: React.FC = () => {
         </div>
       </div>
 
-      {/* Message List */}
-      <MessageList messages={messages} />
+      {/* Message Area & Details Sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Message List */}
+          <MessageList messages={messages} />
 
-      {/* Chat Input */}
-      <ChatInput roomId={activeRoomId} roomName={activeRoom.name} />
+          {/* Chat Input */}
+          <ChatInput roomId={activeRoomId} roomName={activeRoom.name} />
+        </div>
+
+        {isChannelDetailsOpen && <ChannelDetails />}
+      </div>
     </div>
   );
 };
