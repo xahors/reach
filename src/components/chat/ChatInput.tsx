@@ -14,10 +14,12 @@ interface ChatInputProps {
 const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const [message, setMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const client = useMatrixClient();
   const { setSettingsOpen } = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -57,12 +59,57 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !client) return;
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      // 1. Upload the file
+      const result = await client.uploadContent(file, {
+        name: file.name,
+        type: file.type,
+      });
+
+      const mxcUrl = result.content_uri;
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      // 2. Send the message with the mxc URL
+      await client.sendMessage(roomId, {
+        msgtype: isImage ? MsgType.Image : isVideo ? MsgType.Video : MsgType.File,
+        body: file.name,
+        url: mxcUrl,
+        info: {
+          mimetype: file.type,
+          size: file.size,
+        }
+      } as any);
+    } catch (err) {
+      console.error('File upload failed:', err);
+      setError('Failed to upload file. Please try again.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const onEmojiClick = (emojiData: EmojiClickData) => {
     setMessage((prev) => prev + emojiData.emoji);
   };
 
   return (
     <div className="px-4 pb-6 relative">
+      <input 
+        type="file" 
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        className="hidden"
+        accept="image/*,video/*"
+      />
+
       {showEmojiPicker && (
         <div 
           ref={emojiPickerRef}
@@ -108,34 +155,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           value={message}
           onChange={(e) => {
             setMessage(e.target.value);
-            if (error) setError(null);
-          }}
-          placeholder={`Message #${roomName}`}
-          className="flex-1 bg-transparent text-base text-discord-text outline-none placeholder:text-discord-text-muted"
-        />
-
-        <div className="ml-4 flex items-center space-x-3 text-discord-text-muted">
-           <button type="button" className="hover:text-discord-text transition">
-             <Gift className="h-6 w-6" />
-           </button>
-           <button type="button" className="hover:text-discord-text transition">
-             <StickyNote className="h-6 w-6" />
-           </button>
-           <button 
-             type="button" 
-             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-             className={`transition ${showEmojiPicker ? 'text-discord-accent' : 'hover:text-discord-text'}`}
-           >
-             <Smile className="h-6 w-6" />
-           </button>
-        </div>
-      </form>
-    </div>
-  );
-};
-
-export default ChatInput;
-arget.value);
             if (error) setError(null);
           }}
           placeholder={`Message #${roomName}`}
