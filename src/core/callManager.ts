@@ -68,8 +68,8 @@ class CallManager {
         this.clearCall();
       });
 
-      // Always request both audio and video streams so they can be toggled
-      // but the second param (video) determines if we START with video enabled
+      // Second param 'video' determines if the initial getUserMedia includes video.
+      // If false, camera permission is only asked later when setLocalVideoMuted(false) is called.
       await call.placeCall(true, type === 'video');
     } catch (err) {
       console.error('Error placing call:', err);
@@ -99,15 +99,48 @@ class CallManager {
     }
   }
 
+  private playFeedbackSound(type: 'mute' | 'unmute') {
+    try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const context = new AudioContextClass();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = 'sine';
+      // Mute: Higher to Lower, Unmute: Lower to Higher
+      const startFreq = type === 'mute' ? 600 : 400;
+      const endFreq = type === 'mute' ? 400 : 600;
+
+      oscillator.frequency.setValueAtTime(startFreq, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(endFreq, context.currentTime + 0.1);
+
+      gain.gain.setValueAtTime(0.1, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.1);
+      
+      // Close context after sound finished
+      setTimeout(() => context.close(), 200);
+    } catch (e) {
+      console.warn('Audio feedback failed', e);
+    }
+  }
+
   setMuted(muted: boolean) {
     if (this.currentCall) {
       this.currentCall.setMicrophoneMuted(muted);
+      this.playFeedbackSound(muted ? 'mute' : 'unmute');
     }
   }
 
   setVideoMuted(muted: boolean) {
     if (this.currentCall) {
       this.currentCall.setLocalVideoMuted(muted);
+      this.playFeedbackSound(muted ? 'mute' : 'unmute');
     }
   }
 
