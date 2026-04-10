@@ -4,8 +4,9 @@ import { useSpaceRooms } from '../../hooks/useSpaceRooms';
 import { useDirectMessages } from '../../hooks/useDirectMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { cn } from '../../utils/cn';
-import { Hash, ChevronDown, Plus, Settings } from 'lucide-react';
+import { ChevronDown, Plus, Settings } from 'lucide-react';
 import { callManager } from '../../core/callManager';
+import RoomItem from './RoomItem';
 
 const ChannelList: React.FC = () => {
   const { activeSpaceId, activeRoomId, setActiveRoomId, setSettingsOpen } = useAppStore();
@@ -141,19 +142,12 @@ const ChannelList: React.FC = () => {
               <div className="mx-2 h-8 animate-pulse rounded bg-discord-hover" />
             ) : (
               rooms.map((room) => (
-                <button
+                <RoomItem 
                   key={room.roomId}
-                  onClick={() => handleRoomClick(room.roomId)}
-                  className={cn(
-                    "group flex w-full items-center rounded px-2 py-1.5 transition",
-                    activeRoomId === room.roomId
-                      ? "bg-discord-hover text-white"
-                      : "text-discord-text-muted hover:bg-discord-hover hover:text-discord-text"
-                  )}
-                >
-                  <Hash className="mr-1.5 h-5 w-5 text-discord-text-muted" />
-                  <span className="truncate text-base font-medium">{room.name}</span>
-                </button>
+                  room={room}
+                  isActive={activeRoomId === room.roomId}
+                  onClick={handleRoomClick}
+                />
               ))
             )}
           </div>

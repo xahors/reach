@@ -1,4 +1,5 @@
 import { CallEvent, type MatrixCall } from 'matrix-js-sdk';
+import { GroupCallEvent, GroupCallType, GroupCallIntent, type GroupCall } from 'matrix-js-sdk/lib/webrtc/groupCall';
 import { CallErrorCode } from 'matrix-js-sdk/lib/webrtc/call';
 import { CallEventHandlerEvent } from 'matrix-js-sdk/lib/webrtc/callEventHandler';
 import { matrixService } from './matrix';
@@ -6,15 +7,16 @@ import { useAppStore } from '../store/useAppStore';
 
 class CallManager {
   private currentCall: MatrixCall | null = null;
+  private currentGroupCall: GroupCall | null = null;
   private audioContext: AudioContext | null = null;
 
-  init() {
+  async init() {
     const client = matrixService.getClient();
     if (!client) return;
 
     client.on(CallEventHandlerEvent.Incoming, (call: MatrixCall) => {
       console.log('Incoming call...', call);
-      if (this.currentCall) {
+      if (this.currentCall || this.currentGroupCall) {
         call.reject();
         return;
       }
@@ -25,7 +27,6 @@ class CallManager {
     });
   }
 
-  // Call this on ANY user interaction to unblock audio beeps
   warmupAudioContext() {
     this.warmupAndGetContext();
   }
@@ -47,6 +48,10 @@ class CallManager {
   }
 
   private setupCallListeners(call: MatrixCall) {
+    const updateFeeds = () => {
+      useAppStore.getState().setCallFeeds([...call.getFeeds()]);
+    };
+
     call.on(CallEvent.Hangup, () => {
       this.clearCall();
     });
@@ -65,6 +70,26 @@ class CallManager {
         this.playFeedbackSound('connect');
       }
     });
+    call.on(CallEvent.FeedsChanged, updateFeeds);
+    // @ts-expect-error - internal event
+    call.on('local_screenshare_state_changed', updateFeeds);
+    updateFeeds();
+  }
+
+  private setupGroupCallListeners(groupCall: GroupCall) {
+    const updateFeeds = () => {
+      useAppStore.getState().setCallFeeds([...groupCall.userMediaFeeds]);
+    };
+
+    groupCall.on(GroupCallEvent.UserMediaFeedsChanged, updateFeeds);
+    // @ts-expect-error - internal event
+    groupCall.on('local_screenshare_state_changed', updateFeeds);
+    groupCall.on(GroupCallEvent.LocalMuteStateChanged, () => {
+       useAppStore.getState().setMuted(groupCall.isMicrophoneMuted());
+       useAppStore.getState().setCameraOff(groupCall.isLocalVideoMuted());
+    });
+
+    updateFeeds();
   }
 
   private playFeedbackSound(type: 'mute' | 'unmute' | 'connect' | 'place') {
@@ -74,7 +99,6 @@ class CallManager {
     try {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
-
       oscillator.type = 'sine';
       
       let startFreq = 440;
@@ -88,25 +112,22 @@ class CallManager {
         startFreq = 440;
         endFreq = 660;
       } else if (type === 'connect') {
-        startFreq = 523.25; // C5
-        endFreq = 783.99; // G5
+        startFreq = 523.25;
+        endFreq = 783.99;
         duration = 0.2;
       } else if (type === 'place') {
-        startFreq = 392.00; // G4
-        endFreq = 523.25; // C5
+        startFreq = 392.00;
+        endFreq = 523.25;
         duration = 0.15;
       }
 
       const now = context.currentTime;
       oscillator.frequency.setValueAtTime(startFreq, now);
       oscillator.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
-
       gain.gain.setValueAtTime(0.15, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
       oscillator.connect(gain);
       gain.connect(context.destination);
-
       oscillator.start(now);
       oscillator.stop(now + duration);
     } catch (e) {
@@ -117,29 +138,41 @@ class CallManager {
   async placeCall(roomId: string, type: 'voice' | 'video') {
     const client = matrixService.getClient();
     if (!client) return;
-
     this.playFeedbackSound('place');
-
     try {
       const call = client.createCall(roomId);
       if (!call) throw new Error("Failed to create call");
-
       this.currentCall = call;
       useAppStore.getState().setActiveCall(call);
-      
-      if (type === 'voice') {
-        useAppStore.getState().setCameraOff(true);
-      } else {
-        useAppStore.getState().setCameraOff(false);
-      }
-
+      useAppStore.getState().setCameraOff(type === 'voice');
       this.setupCallListeners(call);
-      
-      // Request audio immediately. If video, also request video.
       await call.placeCall(true, type === 'video');
     } catch (err) {
       console.error('Error placing call:', err);
       this.clearCall();
+    }
+  }
+
+  async enterGroupCall(roomId: string, type: 'voice' | 'video') {
+    const client = matrixService.getClient();
+    if (!client) return;
+    this.playFeedbackSound('place');
+    try {
+      let groupCall = client.getGroupCallForRoom(roomId);
+      if (!groupCall) {
+        groupCall = await client.createGroupCall(roomId, GroupCallType.Video, false, GroupCallIntent.Prompt);
+      }
+      this.currentGroupCall = groupCall;
+      useAppStore.getState().setActiveGroupCall(groupCall);
+      useAppStore.getState().setCameraOff(type === 'voice');
+      this.setupGroupCallListeners(groupCall);
+      await groupCall.enter();
+      if (type === 'voice') {
+        await groupCall.setLocalVideoMuted(true);
+      }
+    } catch (err) {
+      console.error('Error entering group call:', err);
+      this.clearGroupCall();
     }
   }
 
@@ -163,43 +196,88 @@ class CallManager {
     if (this.currentCall) {
       this.currentCall.hangup(CallErrorCode.UserHangup, false);
       this.clearCall();
+    } else if (this.currentGroupCall) {
+      this.currentGroupCall.leave();
+      this.clearGroupCall();
     }
   }
 
-  public getContext(): AudioContext | null {
+  getContext(): AudioContext | null {
     return this.warmupAndGetContext();
   }
 
   setMuted(muted: boolean) {
     if (this.currentCall) {
       this.currentCall.setMicrophoneMuted(muted);
-      this.playFeedbackSound(muted ? 'mute' : 'unmute');
+    } else if (this.currentGroupCall) {
+      this.currentGroupCall.setMicrophoneMuted(muted);
     }
+    this.playFeedbackSound(muted ? 'mute' : 'unmute');
   }
 
   async setVideoMuted(muted: boolean) {
     if (this.currentCall) {
-      try {
-        await this.currentCall.setLocalVideoMuted(muted);
-        this.playFeedbackSound(muted ? 'mute' : 'unmute');
-      } catch (e) {
-        console.error("Failed to toggle video:", e);
-      }
+      await this.currentCall.setLocalVideoMuted(muted);
+    } else if (this.currentGroupCall) {
+      await this.currentGroupCall.setLocalVideoMuted(muted);
+    }
+    this.playFeedbackSound(muted ? 'mute' : 'unmute');
+  }
+
+  async setScreensharingEnabled(enabled: boolean) {
+    if (this.currentCall) {
+      await this.currentCall.setScreensharingEnabled(enabled);
+    } else if (this.currentGroupCall) {
+      await this.currentGroupCall.setScreensharingEnabled(enabled);
+    }
+    this.playFeedbackSound(enabled ? 'unmute' : 'mute');
+  }
+
+  async getDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return {
+        audioIn: devices.filter(d => d.kind === 'audioinput'),
+        videoIn: devices.filter(d => d.kind === 'videoinput'),
+        audioOut: devices.filter(d => d.kind === 'audiooutput'),
+      };
+    } catch (e) {
+      console.warn('Failed to enumerate devices', e);
+      return { audioIn: [], videoIn: [], audioOut: [] };
     }
   }
 
-  isMicrophoneMuted(): boolean {
-    return this.currentCall?.isMicrophoneMuted() ?? false;
+  async setAudioInputDevice(deviceId: string) {
+    if (this.currentCall) {
+       // @ts-expect-error - internal SDK method
+       await this.currentCall.setAudioInputDevice(deviceId);
+    } else if (this.currentGroupCall) {
+       // @ts-expect-error - internal SDK method
+       await this.currentGroupCall.setAudioInputDevice(deviceId);
+    }
   }
 
-  isLocalVideoMuted(): boolean {
-    return this.currentCall?.isLocalVideoMuted() ?? false;
+  async setVideoInputDevice(deviceId: string) {
+    if (this.currentCall) {
+       // @ts-expect-error - internal SDK method
+       await this.currentCall.setVideoInputDevice(deviceId);
+    } else if (this.currentGroupCall) {
+       // @ts-expect-error - internal SDK method
+       await this.currentGroupCall.setVideoInputDevice(deviceId);
+    }
   }
 
   private clearCall() {
     this.currentCall = null;
     useAppStore.getState().setActiveCall(null);
     useAppStore.getState().setIncomingCall(null);
+    useAppStore.getState().setCallFeeds([]);
+  }
+
+  private clearGroupCall() {
+    this.currentGroupCall = null;
+    useAppStore.getState().setActiveGroupCall(null);
+    useAppStore.getState().setCallFeeds([]);
   }
 }
 

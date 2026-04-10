@@ -2,7 +2,8 @@ import React from 'react';
 import { MatrixEvent, EventStatus } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
-import { Reply, Pencil, Trash2, Pin } from 'lucide-react';
+import { Reply, Pencil, Trash2, Pin, Video, Phone, PhoneOff } from 'lucide-react';
+import { callManager } from '../../core/callManager';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -24,6 +25,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
   const isMe = event.getSender() === userId;
   const isEdited = !!event.replacingEventId();
 
+  const type = event.getType();
+
+  const isCallEvent = type === 'm.call.v3' || type === 'm.call.invite' || type === 'm.call.hangup' || type === 'm.call.reject' || type === 'm.call.answer';
+
   const replyEventId = event.replyEventId;
   const room = client?.getRoom(event.getRoomId() || '');
   const repliedToEvent = replyEventId ? room?.findEventById(replyEventId) : null;
@@ -36,6 +41,60 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
       return null;
     }
   };
+
+  const handleJoinCall = () => {
+    const roomId = event.getRoomId();
+    if (roomId) {
+      callManager.enterGroupCall(roomId, 'video');
+    }
+  };
+
+  if (isCallEvent && !isRedacted) {
+    let callIcon = <Video className="h-5 w-5 text-green-500" />;
+    let callText = 'Started a video call';
+    let showJoin = false;
+
+    if (type === 'm.call.v3') {
+       callText = 'Started a group call';
+       showJoin = true;
+    } else if (type === 'm.call.invite') {
+       callIcon = <Phone className="h-5 w-5 text-discord-accent" />;
+       callText = 'Started a voice call';
+    } else if (type === 'm.call.hangup' || type === 'm.call.reject') {
+       callIcon = <PhoneOff className="h-5 w-5 text-red-500" />;
+       callText = type === 'm.call.reject' ? 'Declined the call' : 'Ended the call';
+    } else if (type === 'm.call.answer') {
+       callText = 'Answered the call';
+    }
+
+    return (
+      <div className="group relative mt-2 flex px-4 py-2 hover:bg-[#2e3035] transition items-center">
+        <div className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-discord-black/40 shadow-inner">
+          {callIcon}
+        </div>
+        <div className="flex flex-col flex-1 min-w-0">
+          <div className="flex items-center space-x-2 truncate">
+            <span className="font-bold text-white hover:underline cursor-pointer">
+              {sender?.name || sender?.userId}
+            </span>
+            <span className="text-discord-text text-sm">{callText}</span>
+            <span className="text-xs text-discord-text-muted">{timestamp}</span>
+          </div>
+          {showJoin && (
+            <div className="mt-2">
+              <button 
+                onClick={handleJoinCall}
+                className="flex items-center space-x-2 rounded bg-green-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-green-700 shadow-md shadow-green-900/20"
+              >
+                <Video className="h-3 w-3" />
+                <span>JOIN NOW</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const handleRedact = async () => {
     if (!client || !event.getRoomId()) return;

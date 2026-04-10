@@ -105,6 +105,17 @@ class MatrixService {
       console.error("Failed to start Matrix store:", e);
     }
 
+    // Fetch TURN servers if possible
+    try {
+      const turnServers = await client.getTurnServers();
+      if (turnServers && turnServers.length > 0) {
+        console.log("Fetched TURN servers:", turnServers.length);
+        client.setForceTURN(false); // Let it decide
+      }
+    } catch (e) {
+      console.warn("Failed to fetch TURN servers:", e);
+    }
+
     return client;
   }
 

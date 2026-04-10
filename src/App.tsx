@@ -43,7 +43,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 function MainApp() {
   const { isSynced, syncState } = useMatrixSync();
-  const { activeRoomId, setChannelDetailsOpen } = useAppStore();
+  const { activeRoomId, setChannelDetailsOpen, callLayout } = useAppStore();
 
   // Close channel details when switching rooms
   useEffect(() => {
@@ -68,7 +68,7 @@ function MainApp() {
       <ChannelList />
       <ChatArea />
       <SecurityRecovery />
-      <ActiveCall />
+      {callLayout !== 'integrated' && <ActiveCall />}
       <SettingsModal />
     </div>
   );

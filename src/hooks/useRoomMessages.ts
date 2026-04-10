@@ -72,7 +72,7 @@ export const useRoomMessages = (roomId: string | null) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshMessages]);
 
   // Effect to manage read markers
   useEffect(() => {
@@ -270,7 +270,7 @@ export const useRoomMessages = (roomId: string | null) => {
       }
       timelineWindow.current = null;
     };
-  }, [client, roomId, refreshMessages, messageLoadPolicy, jumpToEvent, readMarkerId]);
+  }, [client, roomId, refreshMessages, messageLoadPolicy]);
 
   const paginate = useCallback(async () => {
     if (!timelineWindow.current || !canPaginate || loading) return;

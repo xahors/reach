@@ -3,9 +3,12 @@ import { useAppStore } from '../../store/useAppStore';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { usePinnedEvents } from '../../hooks/usePinnedEvents';
+import { useGroupCall } from '../../hooks/useGroupCall';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
+import ActiveCall from '../calls/ActiveCall';
+import { EventType } from 'matrix-js-sdk';
 import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 
@@ -59,20 +62,39 @@ const ChatArea: React.FC = () => {
     isCallMinimized, 
     setCallMinimized, 
     activeCall,
+    activeGroupCall,
     isMuted,
     setMuted,
     isCameraOff,
-    setCameraOff
+    setCameraOff,
+    callLayout
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
   const { messages, loading, paginate, canPaginate, markAsRead, readMarkerId, jumpToEvent } = useRoomMessages(roomId);
+  const { hasGroupCall, participantCount, isCallActive } = useGroupCall(roomId);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
   const handleCall = (type: 'voice' | 'video') => {
     if (activeRoomId) {
-      callManager.placeCall(activeRoomId, type);
+      const mDirect = client?.getAccountData(EventType.Direct);
+      const directContent = mDirect?.getContent() || {};
+      const isDM = Object.values(directContent).some((roomIds: unknown) => 
+        Array.isArray(roomIds) && roomIds.includes(activeRoomId)
+      );
+
+      if (!isDM) {
+        callManager.enterGroupCall(activeRoomId, type);
+      } else {
+        callManager.placeCall(activeRoomId, type);
+      }
+    }
+  };
+
+  const handleJoinCall = () => {
+    if (activeRoomId) {
+      callManager.enterGroupCall(activeRoomId, 'video');
     }
   };
 
@@ -110,8 +132,24 @@ const ChatArea: React.FC = () => {
           <Hash className="h-6 w-6 text-discord-muted flex-shrink-0" />
           <h1 className="font-bold text-white truncate">{activeRoom.name}</h1>
           
+          {/* Active Call Join Button */}
+          {isCallActive && !activeCall && !activeGroupCall && (
+            <button 
+              onClick={handleJoinCall}
+              className="ml-4 flex items-center space-x-2 rounded-md bg-green-600 px-3 py-1 text-xs font-bold text-white transition hover:bg-green-700 animate-in fade-in zoom-in duration-300 shadow-lg shadow-green-500/20"
+            >
+              <Video className="h-3 w-3" />
+              <span>JOIN CALL</span>
+              {participantCount > 0 && (
+                <span className="ml-1 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-black">
+                  {participantCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Minimized Call Info */}
-          {activeCall && isCallMinimized && (
+          {(activeCall || activeGroupCall) && isCallMinimized && (
             <div 
               onClick={() => setCallMinimized(false)}
               className="ml-4 flex cursor-pointer items-center space-x-3 rounded-md bg-discord-accent/20 px-3 py-1 text-xs transition hover:bg-discord-accent/30 animate-in fade-in zoom-in duration-300"
@@ -151,15 +189,21 @@ const ChatArea: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-4 text-discord-muted flex-shrink-0">
-          <Phone 
-            className="h-6 w-6 cursor-pointer hover:text-discord-text" 
+          <button 
             onClick={() => handleCall('voice')}
-          />
+            title="Start Voice Call"
+            className="hover:text-discord-text transition-colors"
+          >
+            <Phone className="h-6 w-6 cursor-pointer" />
+          </button>
 
-          <Video 
-            className="h-6 w-6 cursor-pointer hover:text-discord-text" 
+          <button 
             onClick={() => handleCall('video')}
-          />
+            title={hasGroupCall ? "Join Group Call" : "Start Video Call"}
+            className={`transition-colors ${hasGroupCall ? 'text-discord-accent' : 'hover:text-discord-text'}`}
+          >
+            <Video className="h-6 w-6 cursor-pointer" />
+          </button>
           <Bell className="h-6 w-6 cursor-pointer hover:text-discord-text" />
           <Pin className="h-6 w-6 cursor-pointer hover:text-discord-text" />
           <Users 
@@ -181,22 +225,30 @@ const ChatArea: React.FC = () => {
       {activeRoomId && <PinnedMessages roomId={activeRoomId} onJumpToEvent={jumpToEvent} />}
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Message List */}
-          <MessageList 
-            key={activeRoomId}
-            roomId={activeRoomId as string}
-            messages={messages} 
-            loading={loading} 
-            onPaginate={paginate}
-            canPaginate={canPaginate}
-            onScrollBottom={markAsRead}
-            onJumpToEvent={jumpToEvent}
-            readMarkerId={readMarkerId || undefined}
-          />
+        <div className="flex flex-1 flex-col overflow-hidden relative">
+          {(activeCall || activeGroupCall) && callLayout === 'integrated' ? (
+            <div className="flex-1 bg-black animate-in fade-in zoom-in duration-300 relative overflow-hidden">
+               <ActiveCall />
+            </div>
+          ) : (
+            <>
+              {/* Message List */}
+              <MessageList 
+                key={activeRoomId}
+                roomId={activeRoomId as string}
+                messages={messages} 
+                loading={loading} 
+                onPaginate={paginate}
+                canPaginate={canPaginate}
+                onScrollBottom={markAsRead}
+                onJumpToEvent={jumpToEvent}
+                readMarkerId={readMarkerId || undefined}
+              />
 
-          {/* Chat Input */}
-          <ChatInput roomId={activeRoomId as string} roomName={activeRoom.name} />
+              {/* Chat Input */}
+              <ChatInput roomId={activeRoomId as string} roomName={activeRoom.name} />
+            </>
+          )}
         </div>
 
         {/* Member List / Channel Details Sidebar */}
