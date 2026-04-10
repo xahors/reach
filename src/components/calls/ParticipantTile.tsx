@@ -6,15 +6,25 @@ import { callManager } from '../../core/callManager';
 interface ParticipantTileProps {
   feed: CallFeed;
   isLocal?: boolean;
+  onActivity?: (level: number) => void;
+  className?: string;
+  showDetails?: boolean;
 }
 
-const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal }) => {
+const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal, onActivity, className = '', showDetails = true }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [level, setLevel] = useState(0);
   const [isAudioMuted, setIsAudioMuted] = useState(feed.isAudioMuted());
   const [isVideoMuted, setIsVideoMuted] = useState(feed.isVideoMuted());
   const requestRef = useRef<number>(0);
+  
+  // Matrix SDK v41 uses 'm.screenshare' or sometimes just 'screenshare' depending on implementation
+  const isScreenshare = feed.purpose === 'm.screenshare';
+
+  useEffect(() => {
+    onActivity?.(level);
+  }, [level, onActivity]);
 
   useEffect(() => {
     const stream = feed.stream;
@@ -30,17 +40,28 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal }) => {
       setIsVideoMuted(feed.isVideoMuted());
     };
 
+    const onStreamChange = () => {
+      if (videoRef.current && feed.stream) {
+        videoRef.current.srcObject = feed.stream;
+      }
+    };
+
     // @ts-expect-error - internal SDK event name
     feed.on('mute_state_changed', onMuteChange);
+    // @ts-expect-error - internal SDK event name
+    feed.on('new_stream', onStreamChange);
+
     return () => {
       // @ts-expect-error - internal SDK event name
       feed.removeListener('mute_state_changed', onMuteChange);
+      // @ts-expect-error - internal SDK event name
+      feed.removeListener('new_stream', onStreamChange);
     };
   }, [feed, isLocal]);
 
   // Audio Activity Indicator
   useEffect(() => {
-    if (isAudioMuted) {
+    if (isAudioMuted || isScreenshare) {
       Promise.resolve().then(() => setLevel(0));
       return;
     }
@@ -81,39 +102,44 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal }) => {
       source?.disconnect();
       analyser?.disconnect();
     };
-  }, [feed.stream, isAudioMuted]);
+  }, [feed.stream, isAudioMuted, isScreenshare]);
 
   return (
-    <div className={`relative flex flex-col items-center justify-center bg-discord-black rounded-lg overflow-hidden border-2 transition-all duration-300 ${level > 0.05 ? 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'border-transparent'}`}>
+    <div className={`relative flex flex-col items-center justify-center bg-discord-black rounded-lg overflow-hidden border-2 transition-all duration-300 aspect-video ${level > 0.05 ? 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'border-transparent'} ${className}`}>
       {/* Video Element */}
-      {!isVideoMuted ? (
+      {(!isVideoMuted || isScreenshare) ? (
         <video
           ref={videoRef}
           autoPlay
           playsInline
-          muted={isLocal}
-          className="w-full h-full object-cover"
+          muted={isLocal || isScreenshare}
+          className={`w-full h-full ${isScreenshare ? 'object-contain' : 'object-cover'}`}
         />
       ) : (
         <div className="flex flex-col items-center space-y-4">
           <div className="h-20 w-20 rounded-full bg-discord-accent flex items-center justify-center text-white text-3xl font-bold shadow-xl">
             {feed.userId.charAt(1).toUpperCase()}
           </div>
-          <span className="text-discord-text-muted font-bold text-sm uppercase tracking-widest">{feed.userId}</span>
+          {showDetails && <span className="text-discord-text-muted font-bold text-sm uppercase tracking-widest">{feed.userId}</span>}
         </div>
       )}
 
       {/* Audio element for remote feeds */}
-      {!isLocal && <audio ref={audioRef} autoPlay />}
+      {!isLocal && !isScreenshare && <audio ref={audioRef} autoPlay />}
 
       {/* Overlays */}
-      <div className="absolute bottom-2 left-2 flex items-center space-x-2 rounded-md bg-black/40 backdrop-blur-sm px-2 py-1 text-xs text-white">
-        <span className="font-bold truncate max-w-[100px]">{isLocal ? 'You' : feed.userId.split(':')[0].substring(1)}</span>
-        {isAudioMuted && <MicOff className="h-3 w-3 text-red-500" />}
-      </div>
+      {showDetails && (
+        <>
+          <div className="absolute bottom-2 left-2 flex items-center space-x-2 rounded-md bg-black/40 backdrop-blur-sm px-2 py-1 text-[10px] text-white max-w-[90%]">
+            <span className="font-bold truncate">{isLocal ? 'You' : feed.userId.split(':')[0].substring(1)}</span>
+            {isScreenshare && <span className="text-[10px] bg-discord-accent px-1 rounded uppercase font-black">Screen</span>}
+            {isAudioMuted && !isScreenshare && <MicOff className="h-3 w-3 text-red-500" />}
+          </div>
 
-      {level > 0.05 && (
-        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,1)]" />
+          {level > 0.05 && (
+            <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,1)]" />
+          )}
+        </>
       )}
     </div>
   );

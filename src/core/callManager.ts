@@ -1,9 +1,18 @@
 import { CallEvent, type MatrixCall } from 'matrix-js-sdk';
-import { GroupCallEvent, GroupCallType, GroupCallIntent, type GroupCall } from 'matrix-js-sdk/lib/webrtc/groupCall';
+import { GroupCallEvent, GroupCallType, GroupCallIntent, GroupCallState, type GroupCall } from 'matrix-js-sdk/lib/webrtc/groupCall';
 import { CallErrorCode } from 'matrix-js-sdk/lib/webrtc/call';
 import { CallEventHandlerEvent } from 'matrix-js-sdk/lib/webrtc/callEventHandler';
 import { matrixService } from './matrix';
 import { useAppStore } from '../store/useAppStore';
+
+interface LegacyCallDevice {
+  device_id: string;
+}
+
+interface LegacyCallEntry {
+  'm.call_id': string;
+  'm.devices': LegacyCallDevice[];
+}
 
 class CallManager {
   private currentCall: MatrixCall | null = null;
@@ -15,7 +24,7 @@ class CallManager {
     if (!client) return;
 
     client.on(CallEventHandlerEvent.Incoming, (call: MatrixCall) => {
-      console.log('Incoming call...', call);
+      console.log('Incoming private call...', call);
       if (this.currentCall || this.currentGroupCall) {
         call.reject();
         return;
@@ -78,10 +87,22 @@ class CallManager {
 
   private setupGroupCallListeners(groupCall: GroupCall) {
     const updateFeeds = () => {
-      useAppStore.getState().setCallFeeds([...groupCall.userMediaFeeds]);
+      const allFeeds = [...groupCall.userMediaFeeds, ...groupCall.screenshareFeeds];
+      useAppStore.getState().setCallFeeds(allFeeds);
     };
 
     groupCall.on(GroupCallEvent.UserMediaFeedsChanged, updateFeeds);
+    groupCall.on(GroupCallEvent.ScreenshareFeedsChanged, updateFeeds);
+    groupCall.on(GroupCallEvent.ParticipantsChanged, updateFeeds);
+    groupCall.on(GroupCallEvent.GroupCallStateChanged, (state) => {
+       console.log(`Group call state: ${state}`);
+       if (state === GroupCallState.Entered) {
+          this.playFeedbackSound('connect');
+       } else if (state === GroupCallState.Ended) {
+          this.clearGroupCall();
+       }
+    });
+
     // @ts-expect-error - internal event
     groupCall.on('local_screenshare_state_changed', updateFeeds);
     groupCall.on(GroupCallEvent.LocalMuteStateChanged, () => {
@@ -159,14 +180,49 @@ class CallManager {
     this.playFeedbackSound('place');
     try {
       let groupCall = client.getGroupCallForRoom(roomId);
-      if (!groupCall) {
-        groupCall = await client.createGroupCall(roomId, GroupCallType.Video, false, GroupCallIntent.Prompt);
+      
+      const room = client.getRoom(roomId);
+      let isCallEmpty = true;
+      if (groupCall && room) {
+        const memberEvents = [
+          ...room.currentState.getStateEvents('m.call.member'),
+          ...room.currentState.getStateEvents('org.matrix.msc3401.call.member'),
+        ];
+        
+        isCallEmpty = !memberEvents.some(ev => {
+          const content = ev.getContent();
+          if (Array.isArray(content?.members)) {
+            return content.members.some((m: { membership?: string }) => m.membership !== 'leave');
+          }
+          if (Array.isArray(content?.memberships)) {
+            return content.memberships.some((m: { membership?: string }) => m.membership === 'join');
+          }
+          if (Array.isArray(content?.['m.calls'])) {
+            return (content['m.calls'] as LegacyCallEntry[]).some(
+              call => Array.isArray(call['m.devices']) && call['m.devices'].length > 0
+            );
+          }
+          return false;
+        });
       }
+
+      if (!groupCall || isCallEmpty) {
+        // Create a new group call — type Voice vs Video affects SFU/media negotiation
+        const callType = type === 'video' ? GroupCallType.Video : GroupCallType.Voice;
+        groupCall = await client.createGroupCall(roomId, callType, false, GroupCallIntent.Prompt);
+        // Sends the m.call state event, notifying other clients a call has started.
+        // If there was an existing inactive call, this overwrites it with a new ID
+        // and triggers a fresh timeline message.
+        await groupCall.create();
+      }
+
       this.currentGroupCall = groupCall;
       useAppStore.getState().setActiveGroupCall(groupCall);
       useAppStore.getState().setCameraOff(type === 'voice');
       this.setupGroupCallListeners(groupCall);
+      
       await groupCall.enter();
+      
       if (type === 'voice') {
         await groupCall.setLocalVideoMuted(true);
       }

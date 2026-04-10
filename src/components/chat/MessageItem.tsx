@@ -2,8 +2,9 @@ import React from 'react';
 import { MatrixEvent, EventStatus } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
-import { Reply, Pencil, Trash2, Pin, Video, Phone, PhoneOff } from 'lucide-react';
+import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply } from 'lucide-react';
 import { callManager } from '../../core/callManager';
+import { useGroupCall } from '../../hooks/useGroupCall';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -16,6 +17,8 @@ interface MessageItemProps {
 const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToReply, onPinToggle, isPinned }) => {
   const client = useMatrixClient();
   const { setEditingEvent, setReplyingToEvent, userId } = useAppStore();
+  const roomId = event.getRoomId();
+  const { isCallActive, groupCall } = useGroupCall(roomId || null);
   const sender = event.sender;
   const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const status = event.status;
@@ -27,7 +30,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
 
   const type = event.getType();
 
-  const isCallEvent = type === 'm.call.v3' || type === 'm.call.invite' || type === 'm.call.hangup' || type === 'm.call.reject' || type === 'm.call.answer';
+  const isCallEvent = type === 'm.call.v3' || 
+                      type === 'm.call.invite' || 
+                      type === 'm.call.hangup' || 
+                      type === 'm.call.reject' || 
+                      type === 'm.call.answer' ||
+                      type === 'org.matrix.msc3401.call' ||
+                      type === 'org.matrix.msc3401.call.member' ||
+                      type === 'm.call.member';
 
   const replyEventId = event.replyEventId;
   const room = client?.getRoom(event.getRoomId() || '');
@@ -54,9 +64,28 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToRep
     let callText = 'Started a video call';
     let showJoin = false;
 
-    if (type === 'm.call.v3') {
+    if (type === 'm.call.v3' || type === 'org.matrix.msc3401.call') {
        callText = 'Started a group call';
-       showJoin = true;
+       const eventCallId = event.getContent()['m.call_id'] || event.getContent()['call_id'];
+       showJoin = isCallActive && groupCall?.groupCallId === eventCallId;
+    } else if (type === 'org.matrix.msc3401.call.member' || type === 'm.call.member') {
+       const content = event.getContent();
+       // Check if member is joining or leaving
+       const memberships = content['m.calls']?.[0]?.['m.membership'] || content['m.membership'];
+       const eventCallId = content['m.calls']?.[0]?.['m.call_id'] || content['call_id'];
+       
+       if (memberships === 'join') {
+         callText = 'Joined the call';
+         showJoin = isCallActive && groupCall?.groupCallId === eventCallId;
+       } else if (memberships === 'leave') {
+         callIcon = <PhoneOff className="h-5 w-5 text-red-400" />;
+         callText = 'Ended the call';
+         showJoin = false;
+       } else {
+         // Fallback for initialization events
+         callText = 'Joined the call';
+         showJoin = isCallActive && groupCall?.groupCallId === eventCallId;
+       }
     } else if (type === 'm.call.invite') {
        callIcon = <Phone className="h-5 w-5 text-discord-accent" />;
        callText = 'Started a voice call';

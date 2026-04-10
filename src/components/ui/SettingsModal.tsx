@@ -84,36 +84,43 @@ const SettingsModal: React.FC = () => {
     try {
       await matrixService.withRecoveryKey(recoveryKey, async () => {
         const crypto = matrixService.getCrypto();
-        const bootstrap = crypto?.bootstrapCrossSigning?.bind(crypto);
-
-        if (typeof bootstrap !== 'function') {
-          throw new Error("Cross-signing bootstrap not supported or crypto not initialized.");
+        
+        if (!crypto) {
+          throw new Error("Encryption is not initialized. Please refresh and try again.");
         }
 
-        await bootstrap({ setupNewCrossSigning: false });
+        // In SDK v41+, bootstrap methods are on the crypto object
+        if (typeof crypto.bootstrapCrossSigning !== 'function') {
+          throw new Error("Cross-signing bootstrap not supported by this encryption backend.");
+        }
 
-        const getKeyBackupInfo = crypto?.getKeyBackupInfo?.bind(crypto);
-        const backupInfo = getKeyBackupInfo ? await getKeyBackupInfo() : null;
-        
-        if (backupInfo) {
-          setStatus('Restoring message backup...');
-          const restore = crypto?.restoreKeyBackup?.bind(crypto);
+        setStatus('Bootstrapping cross-signing...');
+        await crypto.bootstrapCrossSigning({ setupNewCrossSigning: false });
+
+        if (crypto.getKeyBackupInfo) {
+          const backupInfo = await crypto.getKeyBackupInfo();
           
-          if (restore) {
-             if (crypto?.loadSessionBackupPrivateKeyFromSecretStorage) {
-                 await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
-             }
-             await restore();
-             
-             const rooms = client.getRooms();
-             for (const room of rooms) {
-               const events = room.getLiveTimeline().getEvents();
-               for (const event of events) {
-                 if (event.isEncrypted() && event.isDecryptionFailure()) {
-                    await client.decryptEventIfNeeded(event);
+          if (backupInfo) {
+            setStatus('Restoring message backup...');
+            
+            if (crypto.loadSessionBackupPrivateKeyFromSecretStorage) {
+                await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
+            }
+
+            if (crypto.restoreKeyBackup) {
+               await crypto.restoreKeyBackup();
+               
+               setStatus('Decrypting history...');
+               const rooms = client.getRooms();
+               for (const room of rooms) {
+                 const events = room.getLiveTimeline().getEvents();
+                 for (const event of events) {
+                   if (event.isEncrypted() && event.isDecryptionFailure()) {
+                      await client.decryptEventIfNeeded(event);
+                   }
                  }
                }
-             }
+            }
           }
         }
       });

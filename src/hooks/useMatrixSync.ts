@@ -25,7 +25,10 @@ export const useMatrixSync = () => {
         return state;
       });
       
-      if (state === 'PREPARED' || state === 'SYNCING') {
+      // PREPARED means IndexedDB is loaded
+      // SYNCING means HTTP sync is active
+      // RECONNECTING means network hiccup but we have data
+      if (state === 'PREPARED' || state === 'SYNCING' || state === 'RECONNECTING') {
         if (!isSynced) {
           Promise.resolve().then(() => setSynced(true));
         }

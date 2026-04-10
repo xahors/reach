@@ -67,7 +67,7 @@ const ChatArea: React.FC = () => {
     setMuted,
     isCameraOff,
     setCameraOff,
-    callLayout
+    callWindowingMode
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
@@ -226,7 +226,7 @@ const ChatArea: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden relative">
-          {(activeCall || activeGroupCall) && callLayout === 'integrated' ? (
+          {(activeCall || activeGroupCall) && callWindowingMode === 'integrated' ? (
             <div className="flex-1 bg-black animate-in fade-in zoom-in duration-300 relative overflow-hidden">
                <ActiveCall />
             </div>

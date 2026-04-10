@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { callManager } from '../../core/callManager';
-import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, GripHorizontal, Minus, Monitor, MonitorOff, Maximize2, Minimize2, Settings, ExternalLink, Square } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, GripHorizontal, Minus, Monitor, MonitorOff, Maximize2, Minimize2, Settings, ExternalLink, Square, LayoutGrid, User, Presentation } from 'lucide-react';
 import Draggable from 'react-draggable';
 import ParticipantTile from './ParticipantTile';
+import { type CallFeed } from 'matrix-js-sdk/lib/webrtc/callFeed';
 
 interface DeviceList {
   audioIn: MediaDeviceInfo[];
@@ -25,15 +26,40 @@ const ActiveCall: React.FC = () => {
     setCameraOff,
     isScreensharing,
     setScreensharing,
-    callLayout,
-    setCallLayout
+    callWindowingMode,
+    setCallWindowingMode,
+    callContentLayout,
+    setCallContentLayout,
+    prioritizedFeedId,
+    setPrioritizedFeedId
   } = useAppStore();
   
   const [isMaximized, setIsMaximized] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [devices, setDevices] = useState<DeviceList>({ audioIn: [], videoIn: [], audioOut: [] });
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const speakerLevels = useRef<Record<string, number>>({});
   const incomingNodeRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      let loudestId = null;
+      let maxLevel = 0.05; // threshold
+
+      for (const [id, level] of Object.entries(speakerLevels.current)) {
+        if (level > maxLevel) {
+          maxLevel = level;
+          loudestId = id;
+        }
+      }
+
+      if (loudestId) {
+        setActiveSpeakerId(loudestId);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (activeCall) {
@@ -52,6 +78,110 @@ const ActiveCall: React.FC = () => {
       callManager.getDevices().then(setDevices);
     }
   }, [showSettings]);
+
+  const renderFeed = (feed: CallFeed, className = "", showDetails = true) => {
+    const feedId = (feed as { feedId?: string }).feedId || `${feed.userId}-${feed.purpose}`;
+    return (
+      <ParticipantTile 
+        key={feedId} 
+        feed={feed} 
+        isLocal={feed.isLocal()} 
+        className={className}
+        showDetails={showDetails}
+        onActivity={(level) => {
+          speakerLevels.current[feedId] = level;
+        }}
+      />
+    );
+  };
+
+  const renderLayout = () => {
+    const screenshareFeeds = callFeeds.filter(f => f.purpose === 'm.screenshare');
+    const feedsCount = callFeeds.length;
+
+    // Presenter View: Pin screenshare, and ONLY show screenshare
+    // Fallback to Speaker View logic if no screenshare active
+    const effectiveLayout = (callContentLayout === 'presenter' && screenshareFeeds.length === 0) ? 'speaker' : callContentLayout;
+
+    if (effectiveLayout === 'presenter' && screenshareFeeds.length > 0) {
+      const mainFeedId = prioritizedFeedId || (screenshareFeeds[0] as { feedId?: string }).feedId;
+      const mainFeed = callFeeds.find(f => (f as { feedId?: string }).feedId === mainFeedId && f.purpose === 'm.screenshare') || screenshareFeeds[0];
+      
+      return (
+        <div className="flex-1 flex overflow-hidden bg-black relative group">
+          <div className="flex-1 relative">
+            {/* aspect-auto to allow fill */}
+            {renderFeed(mainFeed, "h-full w-full !aspect-auto", true)}
+          </div>
+          {/* Overlay switch if multiple screenshares */}
+          {screenshareFeeds.length > 1 && (
+            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              {screenshareFeeds.map((f, i) => (
+                <button 
+                  key={(f as { feedId?: string }).feedId}
+                  onClick={() => setPrioritizedFeedId((f as { feedId?: string }).feedId || null)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-xl ${
+                    (f as { feedId?: string }).feedId === (mainFeed as { feedId?: string }).feedId 
+                      ? 'bg-discord-accent text-white border-white/20' 
+                      : 'bg-black/60 text-discord-text-muted border-transparent hover:text-white'
+                  }`}
+                >
+                  Screen {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Speaker View: Pin loudest speaker
+    if (effectiveLayout === 'speaker' && callFeeds.length > 0) {
+      const mainFeedId = prioritizedFeedId || activeSpeakerId || (callFeeds[0] as { feedId?: string }).feedId;
+      const mainFeed = callFeeds.find(f => (f as { feedId?: string }).feedId === mainFeedId) || callFeeds[0];
+      const otherFeeds = callFeeds.filter(f => (f as { feedId?: string }).feedId !== (mainFeed as { feedId?: string }).feedId);
+
+      return (
+        <div className="flex-1 flex flex-col overflow-hidden p-2 gap-2">
+          <div className="flex-[4] relative">
+            {renderFeed(mainFeed, "h-full w-full !aspect-auto")}
+          </div>
+          {otherFeeds.length > 0 && (
+            <div className="flex-1 flex flex-row gap-2 overflow-x-auto no-scrollbar h-32 py-1">
+              {otherFeeds.map(f => (
+                <div key={(f as { feedId?: string }).feedId || f.userId} className="w-44 shrink-0 cursor-pointer hover:ring-2 hover:ring-discord-accent rounded-lg overflow-hidden transition-all" onClick={() => setPrioritizedFeedId((f as { feedId?: string }).feedId || null)}>
+                  {renderFeed(f, "h-full w-full", false)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Grid View (Default)
+    // Adjust grid columns based on count to keep tiles large and aspect-video
+    let gridClasses = "grid-cols-1";
+    if (feedsCount === 2) gridClasses = "grid-cols-1 sm:grid-cols-2";
+    else if (feedsCount <= 4) gridClasses = "grid-cols-2";
+    else if (feedsCount <= 6) gridClasses = "grid-cols-2 sm:grid-cols-3";
+    else gridClasses = "grid-cols-3 sm:grid-cols-4";
+
+    return (
+      <div className={`flex-1 overflow-y-auto p-4 grid gap-4 no-scrollbar items-center content-center ${gridClasses}`}>
+        {callFeeds.map((feed) => (
+          <div key={(feed as { feedId?: string }).feedId || feed.userId} className="w-full">
+            {renderFeed(feed, "w-full h-full")}
+          </div>
+        ))}
+        {feedsCount === 0 && (
+          <div className="col-span-full flex items-center justify-center text-discord-text-muted animate-pulse font-bold tracking-widest uppercase text-xs">
+            Waiting for participants...
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const toggleMute = () => {
     callManager.warmupAudioContext();
@@ -78,7 +208,6 @@ const ActiveCall: React.FC = () => {
   if ((activeCall || activeGroupCall) && isCallMinimized) return null;
 
   if (incomingCall) {
-    // ... (incoming call UI remains the same)
     return (
       <div className="absolute top-4 right-4 z-50">
         <Draggable nodeRef={incomingNodeRef} bounds="parent">
@@ -108,10 +237,7 @@ const ActiveCall: React.FC = () => {
     );
   }
 
-  const feedsCount = callFeeds.length;
-  const gridCols = feedsCount <= 1 ? 'grid-cols-1' : feedsCount <= 4 ? 'grid-cols-2' : 'grid-cols-3';
-
-  const containerClasses = callLayout === 'integrated' 
+  const containerClasses = callWindowingMode === 'integrated' 
     ? "relative w-full h-full flex flex-col bg-discord-dark overflow-hidden"
     : `fixed z-50 flex flex-col bg-discord-dark shadow-2xl transition-all duration-300 ${
         isMaximized ? 'inset-4 rounded-xl' : 'bottom-4 right-4 w-[480px] h-[360px] rounded-lg border border-white/10'
@@ -119,11 +245,11 @@ const ActiveCall: React.FC = () => {
 
   const content = (
     <div 
-      ref={callLayout !== 'integrated' ? activeNodeRef : null}
+      ref={callWindowingMode !== 'integrated' ? activeNodeRef : null}
       className={containerClasses}
     >
       {/* Header */}
-      <div className={`flex h-10 items-center justify-between px-4 bg-discord-nav/50 backdrop-blur-md shrink-0 ${callLayout !== 'integrated' ? 'drag-handle cursor-move' : ''}`}>
+      <div className={`flex h-10 items-center justify-between px-4 bg-discord-nav/50 backdrop-blur-md shrink-0 ${callWindowingMode !== 'integrated' ? 'drag-handle cursor-move' : ''}`}>
         <div className="flex items-center space-x-2">
           <div className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
           <span className="text-xs font-bold text-white uppercase tracking-widest">
@@ -131,6 +257,31 @@ const ActiveCall: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center space-x-2">
+          {/* Layout Switchers */}
+          <div className="flex bg-black/20 rounded p-0.5 mr-2">
+            <button 
+              onClick={() => setCallContentLayout('grid')}
+              className={`p-1 rounded transition ${callContentLayout === 'grid' ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:text-white'}`}
+              title="Grid View"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => setCallContentLayout('speaker')}
+              className={`p-1 rounded transition ${callContentLayout === 'speaker' ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:text-white'}`}
+              title="Speaker View"
+            >
+              <User className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => setCallContentLayout('presenter')}
+              className={`p-1 rounded transition ${callContentLayout === 'presenter' ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:text-white'}`}
+              title="Presenter View"
+            >
+              <Presentation className="h-4 w-4" />
+            </button>
+          </div>
+
           <button 
             onClick={() => setShowSettings(!showSettings)}
             className={`p-1 rounded transition ${showSettings ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:bg-white/10 hover:text-white'}`}
@@ -139,10 +290,10 @@ const ActiveCall: React.FC = () => {
             <Settings className="h-4 w-4" />
           </button>
 
-          {/* Layout Toggles */}
-          {callLayout === 'integrated' ? (
+          {/* Window Mode Toggles */}
+          {callWindowingMode === 'integrated' ? (
             <button 
-              onClick={() => setCallLayout('floating')}
+              onClick={() => setCallWindowingMode('floating')}
               className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
               title="Pop out"
             >
@@ -150,7 +301,7 @@ const ActiveCall: React.FC = () => {
             </button>
           ) : (
             <button 
-              onClick={() => setCallLayout('integrated')}
+              onClick={() => setCallWindowingMode('integrated')}
               className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
               title="Integrate into chat"
             >
@@ -158,7 +309,7 @@ const ActiveCall: React.FC = () => {
             </button>
           )}
 
-          {callLayout !== 'integrated' && (
+          {callWindowingMode !== 'integrated' && (
             <button 
               onClick={() => setIsMaximized(!isMaximized)}
               className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
@@ -169,7 +320,7 @@ const ActiveCall: React.FC = () => {
           
           <button 
             onClick={() => {
-              setCallLayout('minimized');
+              setCallWindowingMode('minimized');
               setCallMinimized(true);
             }}
             className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
@@ -217,22 +368,8 @@ const ActiveCall: React.FC = () => {
         </div>
       )}
 
-      {/* Grid Area */}
-      <div className={`flex-1 overflow-y-auto p-4 grid gap-4 no-scrollbar ${gridCols}`}>
-        {callFeeds.map((feed) => (
-          <ParticipantTile 
-            // @ts-expect-error - internal SDK property
-            key={feed.feedId} 
-            feed={feed} 
-            isLocal={feed.isLocal()} 
-          />
-        ))}
-        {feedsCount === 0 && (
-          <div className="col-span-full flex items-center justify-center text-discord-text-muted animate-pulse">
-            Connecting...
-          </div>
-        )}
-      </div>
+      {/* Render selected Layout */}
+      {renderLayout()}
 
       {/* Controls */}
       <div className="flex h-20 items-center justify-center space-x-4 bg-discord-nav/30 backdrop-blur-md shrink-0">
@@ -271,7 +408,7 @@ const ActiveCall: React.FC = () => {
     </div>
   );
 
-  if (callLayout === 'integrated') {
+  if (callWindowingMode === 'integrated') {
     return content;
   }
 

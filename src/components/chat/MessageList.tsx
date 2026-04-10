@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
 import { Loader2, ArrowDown } from 'lucide-react';
@@ -30,7 +30,10 @@ const MessageList: React.FC<MessageListProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const readMarkerRef = useRef<HTMLDivElement>(null);
-  const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
+  // Synchronous guard — prevents concurrent paginations regardless of React batching
+  const isPaginatingRef = useRef(false);
+  // Scroll height captured just before a manual paginate-up, used to restore position
+  const scrollAnchorRef = useRef<number | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
@@ -74,10 +77,40 @@ const MessageList: React.FC<MessageListProps> = ({
     return () => clearTimeout(timer);
   }, [isReady]);
 
-  // 2. Initial positioning and scroll restoration
+  // 1b. Auto-paginate backward when messages don't fill the viewport.
+  // With justify-end layout, short content sits at the bottom and nothing
+  // is scrollable, so handleScroll never fires. Keep loading until the
+  // viewport is filled or history is exhausted.
+  useEffect(() => {
+    if (!isReady || !canPaginate || loading || !onPaginate || !scrollRef.current) return;
+    if (isPaginatingRef.current) return;
+    const { scrollHeight, clientHeight } = scrollRef.current;
+    if (scrollHeight <= clientHeight + 100) {
+      isPaginatingRef.current = true;
+      onPaginate()
+        .then(() => requestAnimationFrame(() => {
+          scrollToBottom();
+          isPaginatingRef.current = false;
+        }))
+        .catch(() => { isPaginatingRef.current = false; });
+    }
+  }, [isReady, canPaginate, loading, messages.length, onPaginate, scrollToBottom]);
+
+  // Scroll anchor restoration — runs synchronously after DOM is updated but
+  // before paint, so there is no visible scroll jump when prepending history.
+  useLayoutEffect(() => {
+    if (scrollAnchorRef.current === null || !scrollRef.current) return;
+    const diff = scrollRef.current.scrollHeight - scrollAnchorRef.current;
+    if (diff > 0) {
+      scrollRef.current.scrollTop += diff;
+    }
+    scrollAnchorRef.current = null;
+    isPaginatingRef.current = false;
+  }, [messages.length]);
+
+  // 2. Initial positioning
   useEffect(() => {
     if (messages.length === 0) return;
-
     if (!isReady) {
       if (messageLoadPolicy === 'latest') {
         requestAnimationFrame(() => {
@@ -85,28 +118,20 @@ const MessageList: React.FC<MessageListProps> = ({
           setTimeout(() => scrollToBottom(), 50);
         });
       } else {
-        requestAnimationFrame(() => {
-          scrollToMarker();
-        });
+        requestAnimationFrame(() => { scrollToMarker(); });
       }
       const timer = setTimeout(() => setIsReady(true), 300);
       return () => clearTimeout(timer);
-    } else if (scrollRef.current && prevScrollHeight !== null) {
-      const currentHeight = scrollRef.current.scrollHeight;
-      scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
-      setTimeout(() => setPrevScrollHeight(null), 0);
     }
-  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, scrollToMarker]);
+  }, [messages, isReady, messageLoadPolicy, scrollToBottom, scrollToMarker]);
 
-  // 3. Auto-scroll on new messages
+  // 3. Auto-scroll on new messages when near the bottom
   useEffect(() => {
     if (!isReady || !scrollRef.current || loading || messages.length === 0) return;
-    
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
     const lastMessage = messages[messages.length - 1];
     const isLocalEcho = lastMessage.getTxnId() && (!lastMessage.getId() || lastMessage.isSending());
-
     if (isNearBottom || isLocalEcho) {
       scrollToBottom(true);
       onScrollBottom?.();
@@ -114,21 +139,23 @@ const MessageList: React.FC<MessageListProps> = ({
   }, [messages, isReady, loading, onScrollBottom, scrollToBottom]);
 
   const handleScroll = useCallback(() => {
-    if (!scrollRef.current || !isReady || loading) return;
+    if (!scrollRef.current || !isReady || isPaginatingRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    
+
     if (scrollTop < 150 && canPaginate && onPaginate) {
-      setPrevScrollHeight(scrollHeight);
-      onPaginate().catch(console.error);
+      isPaginatingRef.current = true;
+      scrollAnchorRef.current = scrollHeight;
+      onPaginate().catch(() => {
+        // Reset on failure so the user can try again
+        isPaginatingRef.current = false;
+        scrollAnchorRef.current = null;
+      });
     }
 
     const distanceToBottom = scrollHeight - scrollTop - clientHeight;
     setShowJumpToLatest(distanceToBottom > 800);
-
-    if (distanceToBottom < 50) {
-      onScrollBottom?.();
-    }
-  }, [loading, canPaginate, onPaginate, isReady, onScrollBottom]);
+    if (distanceToBottom < 50) onScrollBottom?.();
+  }, [canPaginate, onPaginate, isReady, onScrollBottom]);
 
   const RenderedMessages = () => {
     const { isEventPinned, pinEvent, unpinEvent } = usePinnedEvents(roomId);
@@ -196,11 +223,7 @@ const MessageList: React.FC<MessageListProps> = ({
         <div className="flex min-h-full flex-col justify-end pb-4">
           {canPaginate && (
             <div className="flex items-center justify-center py-4">
-              {loading ? (
-                <Loader2 className="h-6 w-6 animate-spin text-discord-accent" />
-              ) : (
-                <div className="h-6" />
-              )}
+              <Loader2 className={`h-6 w-6 text-discord-accent ${loading ? 'animate-spin' : 'opacity-0'}`} />
             </div>
           )}
           

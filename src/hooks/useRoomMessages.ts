@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, PendingEventOrdering } from 'matrix-js-sdk';
+import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, PendingEventOrdering, EventTimelineSet } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
 import { useAppStore } from '../store/useAppStore';
@@ -123,7 +123,12 @@ export const useRoomMessages = (roomId: string | null) => {
         type === 'm.room.message' || 
         type === 'm.room.encrypted' ||
         type === 'm.call.invite' ||
+        type === 'm.call.answer' ||
+        type === 'm.call.hangup' ||
+        type === 'm.call.reject' ||
         type === 'm.room.member' ||
+        type === 'org.matrix.msc3401.call' ||
+        type === 'm.call.v3' ||
         type === 'm.sticker'
       );
       
@@ -190,16 +195,32 @@ export const useRoomMessages = (roomId: string | null) => {
     const attachListeners = (targetRoom: Room) => {
       targetRoom.on(RoomEvent.Timeline, onTimelineEvent);
       targetRoom.on(RoomEvent.LocalEchoUpdated, refreshMessages);
+      targetRoom.on(RoomEvent.TimelineReset, onTimelineReset);
     };
 
     const detachListeners = (targetRoom: Room) => {
       targetRoom.removeListener(RoomEvent.Timeline, onTimelineEvent);
       targetRoom.removeListener(RoomEvent.LocalEchoUpdated, refreshMessages);
+      targetRoom.removeListener(RoomEvent.TimelineReset, onTimelineReset);
+    };
+
+    // Fired when the server returns timeline.limited=true (sync gap).
+    // The live timeline is reset to a new chunk — the existing TimelineWindow
+    // points at a dead old chunk and must be re-initialized.
+    const onTimelineReset = (_room: Room | undefined, _timelineSet: EventTimelineSet, toStartOfTimeline: boolean) => {
+      if (toStartOfTimeline) return; // only care about resets at the live end
+      if (!timelineWindow.current) return;
+      const r = currentRoomRef.current;
+      if (!r) return;
+      timelineWindow.current = new TimelineWindow(client, r.getUnfilteredTimelineSet(), { windowLimit: 1000 });
+      timelineWindow.current.load(undefined, 50)
+        .then(() => refreshMessages())
+        .catch(console.error);
     };
 
     const initTimeline = async (targetRoom: Room) => {
       Promise.resolve().then(() => setLoading(true));
-      
+
       lastSentReceiptIdRef.current = null;
       lastReceiptTimeRef.current = 0;
 
@@ -209,38 +230,26 @@ export const useRoomMessages = (roomId: string | null) => {
 
       try {
         if (messageLoadPolicy === 'latest') {
-          const liveEvents = targetRoom.getLiveTimeline().getEvents();
-          const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
-          
-          await timelineWindow.current.load(lastEventId, 50);
-          
-          let forwardAttempts = 0;
-          while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 3) {
-            await timelineWindow.current.paginate(Direction.Forward, 50);
-            forwardAttempts++;
-          }
+          // Load from the live end (no event ID = "latest").
+          // TimelineWindow will paginate backward from the server to fill the window.
+          // This is correct even if the local cache is empty or stale.
+          await timelineWindow.current.load(undefined, 100);
         } else {
           const myUserId = client.getUserId();
           const readMarkerIdFromRoom = targetRoom.getAccountData('m.fully_read')?.getContent()?.event_id;
           const readReceiptIdFromRoom = myUserId ? targetRoom.getEventReadUpTo(myUserId) : null;
-          
+
           const targetEventId = readMarkerIdFromRoom || readReceiptIdFromRoom;
-          
+
           if (targetEventId) {
-            await timelineWindow.current.load(targetEventId, 50);
+            await timelineWindow.current.load(targetEventId, 100);
+            // Scroll forward past the read marker so unread messages are visible
             if (timelineWindow.current.canPaginate(Direction.Forward)) {
               await timelineWindow.current.paginate(Direction.Forward, 25);
             }
           } else {
-            const liveEvents = targetRoom.getLiveTimeline().getEvents();
-            const lastEventId = liveEvents.length > 0 ? liveEvents[liveEvents.length - 1].getId() : undefined;
-            await timelineWindow.current.load(lastEventId, 50);
-            
-            let forwardAttempts = 0;
-            while (timelineWindow.current.canPaginate(Direction.Forward) && forwardAttempts < 3) {
-              await timelineWindow.current.paginate(Direction.Forward, 50);
-              forwardAttempts++;
-            }
+            // No read marker — fall back to the live end
+            await timelineWindow.current.load(undefined, 100);
           }
         }
       } catch (error) {
@@ -277,7 +286,7 @@ export const useRoomMessages = (roomId: string | null) => {
     
     setLoading(true);
     try {
-      await timelineWindow.current.paginate(Direction.Backward, 30);
+      await timelineWindow.current.paginate(Direction.Backward, 20);
       refreshMessages();
     } catch (error) {
       console.error('Pagination failed:', error);

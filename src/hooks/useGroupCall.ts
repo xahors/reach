@@ -3,8 +3,13 @@ import { RoomStateEvent } from 'matrix-js-sdk';
 import { GroupCallEvent, GroupCallState, type GroupCall } from 'matrix-js-sdk/lib/webrtc/groupCall';
 import { useMatrixClient } from './useMatrixClient';
 
-interface CallMemberSession {
-  membership: string;
+interface LegacyCallDevice {
+  device_id: string;
+}
+
+interface LegacyCallEntry {
+  'm.call_id': string;
+  'm.devices': LegacyCallDevice[];
 }
 
 export const useGroupCall = (roomId: string | null) => {
@@ -18,26 +23,49 @@ export const useGroupCall = (roomId: string | null) => {
     const room = client.getRoom(roomId);
     if (!room) return;
 
-    // Look for m.call.member events to count active participants
-    const memberEvents = room.currentState.getStateEvents('m.call.member');
+    const sdkGroupCall = client.getGroupCallForRoom(roomId);
+
+    // Count active participants from m.call.member state events
+    const memberEvents = [
+      ...room.currentState.getStateEvents('m.call.member'),
+      ...room.currentState.getStateEvents('org.matrix.msc3401.call.member'),
+    ];
+
     const activeParticipants = memberEvents.filter(ev => {
       const content = ev.getContent();
-      return content && content.members && Array.isArray(content.members) && 
-             content.members.some((m: CallMemberSession) => m.membership !== 'leave');
+      // MSC3401 style: members array with membership field
+      if (Array.isArray(content?.members)) {
+        return content.members.some((m: { membership?: string }) => m.membership !== 'leave');
+      }
+      // MSC3401 alternate: memberships array
+      if (Array.isArray(content?.memberships)) {
+        return content.memberships.some((m: { membership?: string }) => m.membership === 'join');
+      }
+      // Legacy m.call.member: non-empty m.devices array means the user has active sessions
+      if (Array.isArray(content?.['m.calls'])) {
+        return (content['m.calls'] as LegacyCallEntry[]).some(
+          call => Array.isArray(call['m.devices']) && call['m.devices'].length > 0
+        );
+      }
+      return false;
     });
 
-    const sdkGroupCall = client.getGroupCallForRoom(roomId);
-    
-    // A call is "active" if there are participants OR we are currently in it
-    const isJoined = sdkGroupCall && (
-      sdkGroupCall.state === GroupCallState.Entered || 
+    const uniqueUserIds = new Set(activeParticipants.map(ev => ev.getStateKey()));
+    let count = uniqueUserIds.size;
+
+    // SDK participant tracking is authoritative when available
+    if (sdkGroupCall?.participants) {
+      count = Math.max(count, sdkGroupCall.participants.size);
+    }
+
+    // The local user's in-call state (initializing or fully entered) also counts
+    // as active — this ensures the call UI stays visible before feeds start
+    const isLocallyJoined = !!sdkGroupCall && (
+      sdkGroupCall.state === GroupCallState.Entered ||
       sdkGroupCall.state === GroupCallState.InitializingLocalCallFeed
     );
-    
-    const count = activeParticipants.length;
-    const active = count > 0 || isJoined;
 
-    setHasGroupCall(!!active);
+    setHasGroupCall(count > 0 || isLocallyJoined);
     setParticipantCount(count);
     setGroupCall(sdkGroupCall || null);
   }, [client, roomId]);
@@ -54,19 +82,22 @@ export const useGroupCall = (roomId: string | null) => {
 
     Promise.resolve().then(() => checkGroupCall());
 
+    // Re-check whenever any room state event arrives (m.call, m.call.member, etc.)
     const onStateEvent = () => checkGroupCall();
     client.on(RoomStateEvent.Events, onStateEvent);
 
-    // Also listen for SDK-level group call state changes
+    // Also track SDK-level state changes on any existing call
     const sdkGroupCall = client.getGroupCallForRoom(roomId);
     if (sdkGroupCall) {
       sdkGroupCall.on(GroupCallEvent.GroupCallStateChanged, checkGroupCall);
+      sdkGroupCall.on(GroupCallEvent.ParticipantsChanged, checkGroupCall);
     }
 
     return () => {
       client.removeListener(RoomStateEvent.Events, onStateEvent);
       if (sdkGroupCall) {
         sdkGroupCall.removeListener(GroupCallEvent.GroupCallStateChanged, checkGroupCall);
+        sdkGroupCall.removeListener(GroupCallEvent.ParticipantsChanged, checkGroupCall);
       }
     };
   }, [client, roomId, checkGroupCall]);
