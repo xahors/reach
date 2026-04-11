@@ -42,7 +42,7 @@ export const UrlPreview: React.FC<UrlPreviewProps> = ({ url, children }) => {
   const isWhitelisted = WHITELISTED_DOMAINS.some(domain => url.includes(domain));
 
   const getYouTubeId = (url: string) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
   };
@@ -55,34 +55,40 @@ export const UrlPreview: React.FC<UrlPreviewProps> = ({ url, children }) => {
       const ytId = getYouTubeId(url);
       let finalPreview: MatrixUrlPreview = {};
 
-      // 1. If it's YouTube, try noembed FIRST as it's more reliable for titles than generic homeserver scrapers
-      if (ytId) {
+      // 1. Try noembed FIRST for all links. It's a reliable OEmbed proxy
+      // which bypasses homeservers that disable URL previews (like matrix.org).
+      try {
+        const fetchUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url;
+        const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(fetchUrl)}`);
+        const json = await res.json();
+        
+        // noembed returns an error string in JSON if it's unsupported
+        if (json.title && !json.error) {
+          finalPreview = {
+            'og:title': json.title,
+            'og:description': json.author_name ? `By ${json.author_name}` : json.provider_name || '',
+            'og:image': json.thumbnail_url || (ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : '')
+          };
+        }
+      } catch (e) {
+        console.warn("Noembed fallback failed:", e);
+      }
+
+      // 2. Try Matrix built-in preview for remaining metadata if noembed failed or returned generic
+      if (!finalPreview['og:title']) {
         try {
-          const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
-          const json = await res.json();
-          if (json.title) {
-            finalPreview = {
-              'og:title': json.title,
-              'og:description': json.author_name ? `YouTube Video by ${json.author_name}` : 'YouTube Video',
-              'og:image': json.thumbnail_url || `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`
-            };
+          const data = await client.getUrlPreview(url, Date.now());
+          if (data) {
+            finalPreview = { ...finalPreview, ...data };
           }
         } catch (e) {
-          console.warn("Noembed fallback failed:", e);
+          // If homeserver throws 403/404, we just swallow it here and rely on final fallback
+          console.warn("Homeserver preview failed:", e);
         }
       }
 
-      // 2. Try Matrix built-in preview for remaining metadata or non-youtube links
-      if (!finalPreview['og:title']) {
-        const data = await client.getUrlPreview(url, Date.now());
-        if (data) {
-          finalPreview = { ...finalPreview, ...data };
-        }
-      }
-
-      // 3. Final sanitization/formatting
+      // 3. Final sanitization/formatting for YouTube
       if (ytId) {
-        // Ensure we don't have a generic title if we have an ID
         if (!finalPreview['og:title'] || finalPreview['og:title'] === 'YouTube') {
           finalPreview['og:title'] = `YouTube Video (${ytId})`;
         }
@@ -97,7 +103,7 @@ export const UrlPreview: React.FC<UrlPreviewProps> = ({ url, children }) => {
         setError(true);
       }
     } catch (e) {
-      console.warn("Failed to fetch URL preview:", e);
+      console.warn("Failed to fetch URL preview completely:", e);
       setError(true);
     } finally {
       setLoading(false);

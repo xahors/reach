@@ -199,9 +199,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
   const renderBodyWithLinks = (text: string) => {
     if (!text) return null;
     
-    // Split by https:// links. We only match links starting with https://
-    // Regex matches https:// followed by non-whitespace characters
-    const parts = text.split(/(https:\/\/\S+)/g);
+    // Split by https:// links. Matches https:// followed by non-whitespace, 
+    // excluding trailing punctuation like periods or commas.
+    const parts = text.split(/(https:\/\/\S+?(?=[.,;:!?'"()[\]{}]*(?:\s|$)))/g);
     
     return parts.map((part, i) => {
       if (part.startsWith('https://')) {
