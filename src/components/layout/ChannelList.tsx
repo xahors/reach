@@ -52,6 +52,26 @@ const ChannelList: React.FC = () => {
 
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
   const currentSpaceSections = (activeSpaceId && roomSectionOrder[activeSpaceId]) || ['Channels'];
+  const lastSelectedSpace = React.useRef<string | null>(activeSpaceId);
+
+  // Effect to handle space switching and initial room selection
+  React.useEffect(() => {
+    // We only want to auto-select a room if:
+    // 1. A space is active
+    // 2. We have rooms in that space
+    // 3. EITHER we just switched to this space OR no room is currently selected
+    if (activeSpaceId && rooms.length > 0) {
+      const spaceChanged = lastSelectedSpace.current !== activeSpaceId;
+      
+      if (spaceChanged || !activeRoomId) {
+        // If the space changed, or we have no active room, select the first one
+        const firstRoomId = rooms[0].roomId;
+        setActiveRoomId?.(firstRoomId);
+      }
+    }
+    
+    lastSelectedSpace.current = activeSpaceId;
+  }, [activeSpaceId, rooms, activeRoomId, setActiveRoomId]);
 
   const handleRoomClick = (roomId: string) => {
     callManager.warmupAudioContext();

@@ -4,7 +4,7 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
 import { 
   X, Shield, Lock, LogOut, Bell, Monitor, Trash2, Clock, 
-  CheckCircle2, Gamepad2, Check, Plus, Edit2, Palette, Code
+  CheckCircle2, Gamepad2, Check, Plus, Edit2, Palette, Code, MessageSquare
 } from 'lucide-react';
 import type { IMyDevice } from 'matrix-js-sdk';
 import { useGamePresence } from '../../hooks/useGamePresence';
@@ -21,7 +21,9 @@ const SettingsModal: React.FC = () => {
     setCustomGameNames,
     detectedGame,
     themeConfig,
-    setThemeConfig
+    setThemeConfig,
+    showUrlPreviews,
+    setShowUrlPreviews
   } = useAppStore();
   
   const client = useMatrixClient();
@@ -271,6 +273,27 @@ const SettingsModal: React.FC = () => {
                           </button>
                         );
                       })}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="mb-12">
+                <div className="mb-6 flex items-center">
+                  <MessageSquare className="mr-2 h-5 w-5 text-accent-primary" />
+                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Chat Features</h2>
+                </div>
+                <div className="space-y-3 max-w-2xl">
+                  <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
+                    <div>
+                      <p className="text-sm font-bold text-white uppercase tracking-tight">URL Previews</p>
+                      <p className="text-[10px] text-text-muted uppercase tracking-tighter">Show secure previews when hovering over links</p>
+                    </div>
+                    <div 
+                      onClick={() => setShowUrlPreviews(!showUrlPreviews)}
+                      className={`h-5 w-10 rounded-full p-1 cursor-pointer transition-colors ${showUrlPreviews ? 'bg-accent-primary' : 'bg-bg-hover'}`}
+                    >
+                      <div className={`h-3 w-3 rounded-full bg-white transition-transform ${showUrlPreviews ? 'translate-x-5' : 'translate-x-0'}`} />
                     </div>
                   </div>
                 </div>

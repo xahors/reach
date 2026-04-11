@@ -12,6 +12,7 @@ export const useRoomMessages = (roomId: string | null) => {
   const [messages, setMessages] = useState<MatrixEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [canPaginate, setCanPaginate] = useState(true);
+  const [canPaginateForward, setCanPaginateForward] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const timelineWindow = useRef<TimelineWindow | null>(null);
   
@@ -121,7 +122,7 @@ export const useRoomMessages = (roomId: string | null) => {
     const filtered = allEvents.filter((event) => {
       const type = event.getType();
       const isDisplayable = (
-        type === 'm.room.message' || 
+        type === 'm.room.message' ||
         type === 'm.room.encrypted' ||
         type === 'm.call.invite' ||
         type === 'm.call.answer' ||
@@ -133,11 +134,8 @@ export const useRoomMessages = (roomId: string | null) => {
         type === 'm.room.avatar' ||
         type === 'm.room.power_levels' ||
         type === 'm.room.canonical_alias' ||
-        type === 'org.matrix.msc3401.call' ||
-        type === 'm.call.v3' ||
         type === 'm.sticker'
-      );
-      
+      );      
       const isReplacement = event.isRelation('m.replace');
       
       return isDisplayable && !isReplacement;
@@ -148,8 +146,30 @@ export const useRoomMessages = (roomId: string | null) => {
     
     if (timelineWindow.current) {
       setCanPaginate(timelineWindow.current.canPaginate(Direction.Backward));
+      setCanPaginateForward(timelineWindow.current.canPaginate(Direction.Forward));
     }
   }, [getEvents, refreshTrigger]);
+
+  const jumpToLive = useCallback(async () => {
+    if (!timelineWindow.current || !client || !roomId) return;
+
+    setLoading(true);
+    try {
+      const room = client.getRoom(roomId);
+      if (room) {
+        timelineManager.clearCache(roomId);
+        const newWindow = timelineManager.getOrCreateWindow(client, room);
+        timelineWindow.current = newWindow;
+        await newWindow.load(undefined, 100);
+        timelineManager.markLoaded(roomId);
+      }
+    } catch (err) {
+      console.error('Failed to jump to live:', err);
+    } finally {
+      refreshMessages();
+      setLoading(false);
+    }
+  }, [client, roomId, refreshMessages]);
 
   useEffect(() => {
     if (!client || !roomId) {
@@ -370,5 +390,5 @@ export const useRoomMessages = (roomId: string | null) => {
     }
   }, [client, roomId, messages, loading]);
 
-  return { messages, loading, paginate, canPaginate, redactAllMyMessages, markAsRead, readMarkerId, jumpToEvent };
+  return { messages, loading, paginate, canPaginate, canPaginateForward, redactAllMyMessages, markAsRead, readMarkerId, jumpToEvent, jumpToLive };
 };
