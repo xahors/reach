@@ -126,6 +126,7 @@ interface AppState {
   roomSections: Record<string, string>; // roomId -> sectionName
   roomSectionOrder: Record<string, string[]>; // spaceId -> list of section names
   themeConfig: ThemeConfig;
+  showUrlPreviews: boolean;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
   setActiveSpaceId: (id: string | null) => void;
@@ -155,6 +156,7 @@ interface AppState {
   addSection: (spaceId: string, sectionName: string) => void;
   removeSection: (spaceId: string, sectionName: string) => void;
   setThemeConfig: (config: Partial<ThemeConfig>) => void;
+  setShowUrlPreviews: (show: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -194,6 +196,7 @@ export const useAppStore = create<AppState>()(
         colors: THEME_PRESETS.oled,
         customCSS: '',
       },
+      showUrlPreviews: true,
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
@@ -267,12 +270,12 @@ export const useAppStore = create<AppState>()(
             ...state.roomSectionOrder,
             [spaceId]: currentSections.filter(s => s !== sectionName)
           },
-          // Note: Rooms will fallback to 'Channels' automatically if their section is missing
         };
       }),
       setThemeConfig: (config) => set((state) => ({
         themeConfig: { ...state.themeConfig, ...config }
       })),
+      setShowUrlPreviews: (show) => set({ showUrlPreviews: show }),
     }),
     {
       name: 'reach-app-storage',
@@ -288,6 +291,9 @@ export const useAppStore = create<AppState>()(
         roomSections: state.roomSections,
         roomSectionOrder: state.roomSectionOrder,
         themeConfig: state.themeConfig,
+        showUrlPreviews: state.showUrlPreviews,
+        activeSpaceId: state.activeSpaceId,
+        activeRoomId: state.activeRoomId,
       }),
     }
   )

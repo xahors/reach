@@ -5,6 +5,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 import { cn } from '../../utils/cn';
+import { UrlPreview } from './UrlPreview';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -195,6 +196,32 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
 
   const avatarUrl = getAvatar();
 
+  const renderBodyWithLinks = (text: string) => {
+    if (!text) return null;
+    
+    // Split by https:// links. We only match links starting with https://
+    // Regex matches https:// followed by non-whitespace characters
+    const parts = text.split(/(https:\/\/\S+)/g);
+    
+    return parts.map((part, i) => {
+      if (part.startsWith('https://')) {
+        return (
+          <UrlPreview key={i} url={part}>
+            <a 
+              href={part} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-accent-primary hover:underline break-all"
+            >
+              {part}
+            </a>
+          </UrlPreview>
+        );
+      }
+      return part;
+    });
+  };
+
   return (
     <div className={cn(
       "group relative flex px-4 transition-colors hover:bg-bg-hover/20 border-l-2 border-transparent hover:border-accent-primary/20",
@@ -283,7 +310,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
             isRedacted ? "text-text-muted italic opacity-50" : "text-text-main",
             status === EventStatus.SENDING ? "opacity-50" : ""
           )}>
-            {body}
+            {isRedacted ? body : renderBodyWithLinks(body || '')}
             {isEdited && (
               <span className="ml-1 text-[9px] text-text-muted select-none uppercase tracking-tighter font-bold opacity-60">(edited)</span>
             )}
