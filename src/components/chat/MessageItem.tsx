@@ -2,272 +2,290 @@ import React from 'react';
 import { MatrixEvent, EventStatus } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
-import { Reply, Pencil, Trash2, Pin } from 'lucide-react';
+import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings } from 'lucide-react';
+import { callManager } from '../../core/callManager';
+import { cn } from '../../utils/cn';
 
 interface MessageItemProps {
   event: MatrixEvent;
-  isGrouped?: boolean;
-  onJumpToReply?: (replyId: string) => void;
-  onPinToggle?: (eventId: string, isPinned: boolean) => void;
-  isPinned?: boolean;
+  isContinuation?: boolean;
+  onJumpToEvent?: (id: string) => void;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ event, isGrouped, onJumpToReply, onPinToggle, isPinned }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false, onJumpToEvent }) => {
   const client = useMatrixClient();
-  const { setEditingEvent, setReplyingToEvent, userId } = useAppStore();
+  const { userId, setEditingEvent, setReplyingToEvent } = useAppStore();
   const sender = event.sender;
-  const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const status = event.status;
-  const isSending = status === EventStatus.SENDING || status === EventStatus.QUEUED;
-  const isFailed = status === EventStatus.NOT_SENT;
   const isRedacted = event.isRedacted();
+  const status = event.status;
   const isMe = event.getSender() === userId;
   const isEdited = !!event.replacingEventId();
 
-  const replyEventId = event.replyEventId;
-  const room = client?.getRoom(event.getRoomId() || '');
-  const repliedToEvent = replyEventId ? room?.findEventById(replyEventId) : null;
+  const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fullDate = new Date(event.getTs()).toLocaleString();
+
+  const type = event.getType();
+
+  const isStateEvent = type === 'm.room.member' || 
+                       type === 'm.room.name' || 
+                       type === 'm.room.topic' || 
+                       type === 'm.room.avatar' ||
+                       type === 'm.room.power_levels' ||
+                       type === 'm.room.canonical_alias';
+
+  const isCallEvent = type === 'm.call.v3' || 
+                      type === 'm.call.invite' || 
+                      type === 'm.call.hangup' || 
+                      type === 'm.call.reject' || 
+                      type === 'm.call.answer' ||
+                      type === 'org.matrix.msc3401.call';
+
+  const handleJoinCall = () => {
+    const roomId = event.getRoomId();
+    if (roomId) {
+      callManager.enterGroupCall(roomId, 'video');
+    }
+  };
+
+  if (isStateEvent && !isRedacted) {
+    let icon = <Settings className="h-3 w-3 text-text-muted" />;
+    let text = '';
+    const content = event.getContent();
+    const prevContent = event.getPrevContent();
+    const senderName = sender?.name || event.getSender() || 'Someone';
+
+    if (type === 'm.room.member') {
+      const membership = content.membership;
+      const prevMembership = prevContent?.membership;
+      const targetName = content.displayname || event.getStateKey() || 'Someone';
+
+      if (membership === 'join') {
+        if (prevMembership === 'invite') {
+          text = `${targetName} accepted an invite`;
+        } else {
+          text = `${targetName} joined the room`;
+        }
+        icon = <UserPlus className="h-3 w-3 text-green-500" />;
+      } else if (membership === 'leave') {
+        if (prevMembership === 'invite') {
+          text = `${senderName} rescinded the invite for ${targetName}`;
+        } else if (event.getSender() !== event.getStateKey()) {
+          text = `${senderName} kicked ${targetName}`;
+        } else {
+          text = `${targetName} left the room`;
+        }
+        icon = <UserMinus className="h-3 w-3 text-red-400" />;
+      } else if (membership === 'invite') {
+        text = `${senderName} invited ${targetName} to the room`;
+        icon = <UserPlus className="h-3 w-3 text-accent-primary" />;
+      } else if (membership === 'ban') {
+        text = `${senderName} banned ${targetName}`;
+        icon = <UserMinus className="h-3 w-3 text-red-600" />;
+      }
+    } else if (type === 'm.room.name') {
+      text = `${senderName} changed the room name to "${content.name}"`;
+    } else if (type === 'm.room.topic') {
+      text = `${senderName} changed the room topic`;
+    } else if (type === 'm.room.avatar') {
+      text = `${senderName} changed the room avatar`;
+    } else if (type === 'm.room.power_levels') {
+      text = `${senderName} changed the permissions for this room`;
+    }
+
+    if (text) {
+      return (
+        <div className="group relative flex items-center px-4 py-0.5 hover:bg-bg-hover/30 transition-colors border-l-2 border-transparent hover:border-border-main">
+          <div className="mr-4 flex h-8 w-8 shrink-0 items-center justify-center">
+            {icon}
+          </div>
+          <div className="flex flex-1 items-baseline space-x-2 min-w-0">
+            <span className="text-text-muted text-[11px] font-medium truncate italic">{text}</span>
+            <span className="text-[9px] text-text-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity font-mono">
+              {timestamp}
+            </span>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  if (isCallEvent && !isRedacted) {
+    let callIcon = <Video className="h-5 w-5 text-green-500" />;
+    let callText = 'Started a video call';
+    let showJoin = false;
+
+    if (type === 'm.call.invite') {
+       callText = 'Started a private call';
+       callIcon = <Phone className="h-5 w-5 text-green-500" />;
+    } else if (type === 'm.call.hangup' || type === 'm.call.reject') {
+       callIcon = <PhoneOff className="h-5 w-5 text-red-500" />;
+       callText = type === 'm.call.reject' ? 'Declined the call' : 'Ended the call';
+    } else if (type === 'm.call.answer') {
+       callText = 'Answered the call';
+    } else if (type === 'org.matrix.msc3401.call' || type === 'm.call.v3') {
+       callText = 'Group call active';
+       showJoin = true;
+    }
+
+    return (
+      <div className="group relative mt-2 flex px-4 py-3 hover:bg-bg-hover transition items-center border border-border-main/50 rounded-xl mx-4 bg-bg-nav/20">
+        <div className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-nav border border-border-main">
+          {callIcon}
+        </div>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-bold text-white uppercase tracking-tighter">{callText}</span>
+            <span className="text-[10px] text-text-muted font-mono">{timestamp}</span>
+          </div>
+          <div className="text-xs text-text-muted truncate">
+            {sender?.name || event.getSender()}
+          </div>
+        </div>
+        {showJoin && (
+          <button 
+            onClick={handleJoinCall}
+            className="ml-4 flex items-center space-x-2 rounded bg-green-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-green-700 shadow-lg shadow-green-900/20 uppercase tracking-widest"
+          >
+            <Video className="h-3 w-3" />
+            <span>JOIN</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const content = event.getContent();
+  const body = isRedacted ? 'This message was deleted.' : content.body;
+  
+  let media = null;
+  if (!isRedacted && content.msgtype === 'm.image' && content.url) {
+    const mxcUrl = content.url;
+    const httpUrl = client?.mxcUrlToHttp(mxcUrl, 400, 400, 'scale', true);
+    if (httpUrl) {
+      media = (
+        <div className="mt-2 overflow-hidden rounded-lg border border-border-main max-w-sm bg-bg-nav">
+          <img src={httpUrl} alt={body} className="max-h-80 w-auto object-contain transition-transform hover:scale-[1.02] cursor-zoom-in" />
+        </div>
+      );
+    }
+  } else if (!isRedacted && content.msgtype === 'm.sticker' && content.url) {
+    const mxcUrl = content.url;
+    const httpUrl = client?.mxcUrlToHttp(mxcUrl, 160, 160, 'scale', true);
+    if (httpUrl) {
+      media = (
+        <div className="mt-1 max-w-[160px]">
+          <img src={httpUrl} alt={body} className="h-auto w-full object-contain" />
+        </div>
+      );
+    }
+  }
+
+  const isReply = !!content['m.relates_to']?.['m.in_reply_to'];
+  const replyEventId = content['m.relates_to']?.['m.in_reply_to']?.event_id;
+  const room = client?.getRoom(event.getRoomId());
+  const replyEvent = replyEventId ? room?.findEventById(replyEventId) : null;
 
   const getAvatar = () => {
-    if (!client || !sender || typeof sender.getAvatarUrl !== 'function') return null;
     try {
-      return sender.getAvatarUrl(client.getHomeserverUrl(), 40, 40, 'crop', undefined, true);
+      return sender?.getAvatarUrl(client?.getHomeserverUrl() || '', 40, 40, 'crop', undefined, true);
     } catch {
       return null;
     }
   };
 
-  const handleRedact = async () => {
-    if (!client || !event.getRoomId()) return;
-    if (window.confirm('Are you sure you want to delete this message?')) {
-      try {
-        await client.redactEvent(event.getRoomId()!, event.getId()!);
-      } catch (err) {
-        console.error('Failed to redact event:', err);
-      }
-    }
-  };
+  const avatarUrl = getAvatar();
 
-  const renderMedia = () => {
-    const type = event.getType();
-    const content = event.getContent();
-    const msgtype = content.msgtype;
-    const url = content.url;
-    
-    if (!url || !client) return null;
-
-    const httpUrl = client.mxcUrlToHttp(url, 400, 400, 'scale', false, true);
-    if (!httpUrl) return null;
-
-    if (type === 'm.sticker') {
-      return (
-        <div className="mt-2 max-w-[160px] overflow-hidden">
-          <img 
-            src={httpUrl} 
-            alt={content.body || 'Sticker'} 
-            className="h-auto w-full object-contain"
-          />
-        </div>
-      );
-    }
-
-    if (msgtype === 'm.image') {
-      return (
-        <div className="mt-2 max-w-sm overflow-hidden rounded-lg border border-discord-hover bg-black/20">
-          <img 
-            src={httpUrl} 
-            alt={event.getContent().body || 'Image'} 
-            className="max-h-80 w-auto cursor-pointer object-contain"
-            onClick={() => window.open(httpUrl, '_blank')}
-          />
-        </div>
-      );
-    }
-
-    if (msgtype === 'm.video') {
-      return (
-        <div className="mt-2 max-w-md overflow-hidden rounded-lg border border-discord-hover bg-black">
-          <video 
-            src={httpUrl} 
-            controls 
-            className="max-h-80 w-full"
-          />
-        </div>
-      );
-    }
-
-    return (
-      <a 
-        href={httpUrl} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="mt-2 flex items-center rounded bg-discord-sidebar p-2 text-discord-accent hover:underline w-fit"
-      >
-        <span className="truncate max-w-xs text-xs">📄 {event.getContent().body || 'Download File'}</span>
-      </a>
-    );
-  };
-
-  const renderReply = () => {
-    if (!repliedToEvent || !replyEventId) return null;
-    const replySender = repliedToEvent.sender;
-    const replyContent = repliedToEvent.getClearContent()?.body || repliedToEvent.getContent().body;
-    
-    return (
-      <div 
-        onClick={(e) => {
-          e.stopPropagation();
-          onJumpToReply?.(replyEventId);
-        }}
-        className="mb-1 flex items-center space-x-2 opacity-60 hover:opacity-100 transition cursor-pointer overflow-hidden max-w-full group/reply"
-      >
-        <div className="h-4 w-4 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-[8px] text-white font-bold overflow-hidden">
-          {replySender?.getAvatarUrl(client!.getHomeserverUrl(), 16, 16, 'crop', undefined, true) ? (
-            <img src={replySender.getAvatarUrl(client!.getHomeserverUrl(), 16, 16, 'crop', undefined, true)!} alt="" className="h-full w-full object-cover" />
-          ) : (
-            replySender?.name?.charAt(0).toUpperCase() || '?'
-          )}
-        </div>
-        <span className="text-xs font-bold text-white shrink-0 group-hover/reply:underline">@{replySender?.name || replySender?.userId}</span>
-        <span className="truncate text-xs text-discord-text-muted italic">{replyContent}</span>
-      </div>
-    );
-  };
-
-  let clearContent = event.getClearContent() || event.getContent();
-  const replacingEvent = event.replacingEvent();
-  
-  if (replacingEvent) {
-    const editClearContent = replacingEvent.getClearContent() || replacingEvent.getContent();
-    if (editClearContent?.['m.new_content']) {
-      clearContent = editClearContent['m.new_content'];
-    }
-  }
-
-  let content: React.ReactNode = clearContent?.body;
-
-  if (!isRedacted && typeof content === 'string') {
-    const parts = content.split(/(@[^\s]+)/g);
-    content = parts.map((part, i) => {
-      if (part.startsWith('@')) {
-        return <span key={i} className="rounded bg-discord-accent/20 px-1 font-medium text-discord-accent hover:bg-discord-accent hover:text-white transition-colors cursor-pointer">{part}</span>;
-      }
-      return part;
-    });
-  }
-
-  if (isRedacted) {
-    content = <span className="italic text-discord-text-muted">This message was deleted.</span>;
-  } else if (event.isEncrypted() && !event.getClearContent() && !replacingEvent?.getClearContent()) {
-    if (event.isDecryptionFailure()) {
-      content = (
-        <span className="flex items-center">
-          <span className="mr-2">🔐 Unable to decrypt message (waiting for keys)</span>
-          <button 
-            onClick={() => {
-              client?.decryptEventIfNeeded(event).catch(() => {});
-            }}
-            className="text-xs font-bold text-discord-accent hover:underline"
-          >
-            Retry
-          </button>
-        </span>
-      );
-    } else {
-      content = <span className="italic text-discord-text-muted">🔐 Encrypted message</span>;
-    }
-  }
-
-  const media = isRedacted ? null : renderMedia();
-
-  const renderActions = () => {
-    if (isRedacted || isSending || isFailed) return null;
-    return (
-      <div className="absolute -top-4 right-4 flex items-center rounded border border-discord-hover bg-discord-sidebar shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 overflow-hidden">
-        <button 
-          onClick={() => onPinToggle?.(event.getId()!, isPinned || false)}
-          className={`p-1.5 text-discord-text-muted hover:bg-discord-hover transition ${isPinned ? 'text-discord-accent' : 'hover:text-white'}`}
-          title={isPinned ? 'Unpin' : 'Pin'}
-        >
-          <Pin className="h-4 w-4" />
-        </button>
+  return (
+    <div className={cn(
+      "group relative flex px-4 transition-colors hover:bg-bg-hover/20 border-l-2 border-transparent hover:border-accent-primary/20",
+      isContinuation ? "py-0.5" : "mt-4 py-1",
+      isEdited && "bg-accent-primary/5 border-l-accent-primary/30"
+    )}>
+      {/* Context Actions */}
+      <div className="absolute -top-4 right-4 z-10 flex items-center space-x-0.5 rounded-lg bg-bg-sidebar border border-border-main p-0.5 opacity-0 shadow-xl group-hover:opacity-100 transition-all duration-100">
         <button 
           onClick={() => setReplyingToEvent(event)}
-          className="p-1.5 text-discord-text-muted hover:bg-discord-hover hover:text-white transition"
+          className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-white rounded transition" 
           title="Reply"
         >
           <Reply className="h-4 w-4" />
         </button>
-        {isMe && event.getType() === 'm.room.message' && (
+        {isMe && (
           <button 
             onClick={() => setEditingEvent(event)}
-            className="p-1.5 text-discord-text-muted hover:bg-discord-hover hover:text-white transition"
+            className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-white rounded transition" 
             title="Edit"
           >
             <Pencil className="h-4 w-4" />
           </button>
         )}
-        {isMe && (
-          <button 
-            onClick={handleRedact}
-            className="p-1.5 text-red-400 hover:bg-discord-hover hover:text-red-500 transition"
-            title="Delete"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
+        <button className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-white rounded transition" title="Pin">
+          <Pin className="h-4 w-4" />
+        </button>
+        <button className="p-1.5 text-red-400 hover:bg-red-500/20 rounded transition" title="Delete">
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
-    );
-  };
 
-  if (isGrouped) {
-    return (
-      <div className={`group relative -mt-0.5 flex items-center px-4 py-0.5 hover:bg-[#2e3035] ${isSending ? 'opacity-50' : ''} ${isFailed ? 'text-red-500' : ''}`}>
-        {renderActions()}
-        <div className="absolute left-0 top-0 flex h-full w-14 items-center justify-center opacity-0 group-hover:opacity-100">
-           <span className="text-[10px] text-discord-text-muted">{timestamp}</span>
+      {!isContinuation ? (
+        <div className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-nav overflow-hidden border border-border-main shadow-sm">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-sm font-black uppercase text-text-muted">
+              {(sender?.name || event.getSender() || '?').charAt(0)}
+            </span>
+          )}
         </div>
-        <div className="ml-10 flex flex-col text-base text-discord-text">
-          {renderReply()}
-          <div className="flex-1">
-            {content}
-            {isEdited && !isRedacted && (
-              <span className="ml-1 text-[10px] text-discord-text-muted select-none">(edited)</span>
-            )}
-          </div>
-          {media}
-          {isFailed && <span className="mt-1 text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
-        </div>
-      </div>
-    );
-  }
-
-  const avatarUrl = getAvatar();
-
-  return (
-    <div className={`group relative mt-4 flex px-4 py-1 hover:bg-[#2e3035] ${isSending ? 'opacity-50' : ''}`}>
-      {renderActions()}
-      <div className="mr-4 mt-0.5 h-10 w-10 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-white font-bold overflow-hidden">
-        {avatarUrl ? (
-          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-        ) : (
-          sender?.name?.charAt(0).toUpperCase() || '?'
-        )}
-      </div>
-      <div className="flex flex-col overflow-hidden">
-        <div className="flex items-baseline space-x-2">
-          <span className="cursor-pointer text-base font-medium text-white hover:underline">
-            {sender?.name || sender?.userId}
+      ) : (
+        <div className="mr-4 flex w-10 shrink-0 justify-center">
+          <span className="opacity-0 group-hover:opacity-100 text-[9px] text-text-muted font-mono mt-1 transition-opacity">
+            {timestamp}
           </span>
-          <span className="text-xs text-discord-text-muted">{timestamp}</span>
-          {isFailed && <span className="text-[10px] font-bold uppercase text-red-500">Sending Failed</span>}
         </div>
-        <div className={`text-base text-discord-text ${isFailed ? 'text-red-400' : ''}`}>
-          {renderReply()}
-          <div>
-            {content}
-            {isEdited && !isRedacted && (
-              <span className="ml-1 text-[10px] text-discord-text-muted select-none">(edited)</span>
+      )}
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {!isContinuation && (
+          <div className="flex items-baseline space-x-2">
+            <span className={cn(
+              "cursor-pointer text-sm font-black tracking-tight hover:underline",
+              isMe ? "text-accent-primary" : "text-text-main"
+            )}>
+              {sender?.name || event.getSender()}
+            </span>
+            <span className="text-[10px] font-mono text-text-muted uppercase tracking-tighter" title={fullDate}>
+              {timestamp}
+            </span>
+          </div>
+        )}
+
+        {isReply && replyEvent && (
+          <div 
+            onClick={() => onJumpToEvent?.(replyEventId!)}
+            className="mb-1 flex items-center space-x-2 rounded bg-bg-nav/40 p-1.5 border-l-2 border-accent-primary/30 cursor-pointer hover:bg-bg-nav transition"
+          >
+            <div className="h-4 w-4 shrink-0 rounded-full bg-bg-hover overflow-hidden">
+               {client && replyEvent.sender?.getAvatarUrl(client.getHomeserverUrl(), 16, 16, 'crop', undefined, true) ? (
+                 <img src={replyEvent.sender.getAvatarUrl(client.getHomeserverUrl(), 16, 16, 'crop', undefined, true)!} alt="" className="h-full w-full object-cover" />
+               ) : (
+                 <div className="flex h-full w-full items-center justify-center text-[8px] bg-bg-nav text-text-muted">?</div>
+               )}
+            </div>
+            <span className="text-[10px] font-bold text-text-muted whitespace-nowrap">{replyEvent.sender?.name || 'Someone'}:</span>
+            <span className="truncate text-[10px] text-text-muted italic">{replyEvent.getContent().body}</span>
+          </div>
+        )}
+
+        <div className="flex flex-col">
+          <div className={cn(
+            "text-sm leading-relaxed tracking-tight",
+            isRedacted ? "text-text-muted italic opacity-50" : "text-text-main",
+            status === EventStatus.SENDING ? "opacity-50" : ""
+          )}>
+            {body}
+            {isEdited && (
+              <span className="ml-1 text-[9px] text-text-muted select-none uppercase tracking-tighter font-bold opacity-60">(edited)</span>
             )}
           </div>
           {media}

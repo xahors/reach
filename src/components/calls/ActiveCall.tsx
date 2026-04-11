@@ -1,186 +1,211 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { callManager } from '../../core/callManager';
-import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, GripHorizontal, Minus } from 'lucide-react';
-import { CallEvent } from 'matrix-js-sdk';
+import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, GripHorizontal, Minus, Monitor, MonitorOff, Maximize2, Minimize2, Settings, ExternalLink, Square, LayoutGrid, User, Presentation } from 'lucide-react';
 import Draggable from 'react-draggable';
+import ParticipantTile from './ParticipantTile';
+import { type CallFeed } from 'matrix-js-sdk/lib/webrtc/callFeed';
 
-const MicActivityIndicator: React.FC<{ stream: MediaStream | null }> = ({ stream }) => {
-  const [level, setLevel] = useState(0);
-  const requestRef = useRef<number>(0);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-
-  useEffect(() => {
-    if (!stream || stream.getAudioTracks().length === 0) {
-      Promise.resolve().then(() => setLevel(0));
-      return;
-    }
-
-    let audioCtx: AudioContext | null = null;
-
-    try {
-      audioCtx = callManager.getContext();
-      if (!audioCtx) return;
-
-      // Clean up previous source if any
-      if (sourceRef.current) sourceRef.current.disconnect();
-      if (analyserRef.current) analyserRef.current.disconnect();
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.4;
-      source.connect(analyser);
-      
-      sourceRef.current = source;
-      analyserRef.current = analyser;
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const update = () => {
-        if (!analyserRef.current) return;
-        
-        analyserRef.current.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-        // High sensitivity for visualization: boost the signal
-        const normalized = Math.min((average * 2.5) / 128, 1);
-        setLevel(normalized);
-        requestRef.current = requestAnimationFrame(update);
-      };
-
-      update();
-
-      return () => {
-        cancelAnimationFrame(requestRef.current);
-        if (sourceRef.current) sourceRef.current.disconnect();
-        if (analyserRef.current) analyserRef.current.disconnect();
-      };
-    } catch (e) {
-      console.warn('Mic indicator failed', e);
-    }
-  }, [stream]);
-
-  return (
-    <div className="h-2 w-full bg-discord-black rounded-full overflow-hidden mt-1 flex border border-white/5">
-      <div 
-        className="h-full bg-green-500 transition-all duration-75 ease-out shadow-[0_0_8px_rgba(34,197,94,0.6)]" 
-        style={{ width: `${level * 100}%`, opacity: level > 0.02 ? 1 : 0.2 }}
-      />
-    </div>
-  );
-};
+interface DeviceList {
+  audioIn: MediaDeviceInfo[];
+  videoIn: MediaDeviceInfo[];
+  audioOut: MediaDeviceInfo[];
+}
 
 const ActiveCall: React.FC = () => {
   const { 
     activeCall, 
+    activeGroupCall,
+    callFeeds,
     incomingCall, 
     isCallMinimized, 
     setCallMinimized, 
     isMuted, 
     setMuted, 
     isCameraOff, 
-    setCameraOff 
+    setCameraOff,
+    isScreensharing,
+    setScreensharing,
+    callWindowingMode,
+    setCallWindowingMode,
+    callContentLayout,
+    setCallContentLayout,
+    prioritizedFeedId,
+    setPrioritizedFeedId
   } = useAppStore();
   
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  
-  const [callState, setCallState] = useState<string>('');
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  
-  // nodeRefs for react-draggable
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [devices, setDevices] = useState<DeviceList>({ audioIn: [], videoIn: [], audioOut: [] });
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const speakerLevels = useRef<Record<string, number>>({});
   const incomingNodeRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!activeCall) {
-      if (callState !== '') {
-        Promise.resolve().then(() => {
-          setCallState('');
-          setLocalStream(null);
-          setRemoteStream(null);
-        });
-      }
-      return;
-    }
+    const interval = setInterval(() => {
+      let loudestId = null;
+      let maxLevel = 0.05; // threshold
 
-    const updateState = () => {
-      setCallState(activeCall.state);
+      for (const [id, level] of Object.entries(speakerLevels.current)) {
+        if (level > maxLevel) {
+          maxLevel = level;
+          loudestId = id;
+        }
+      }
+
+      if (loudestId) {
+        setActiveSpeakerId(loudestId);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (activeCall) {
       setMuted(activeCall.isMicrophoneMuted());
       setCameraOff(activeCall.isLocalVideoMuted());
-      setLocalStream(activeCall.localUsermediaStream || null);
-      setRemoteStream(activeCall.remoteUsermediaStream || null);
-    };
-
-    updateState();
-    
-    // Poll for stream updates since they don't always fire events immediately
-    const interval = setInterval(updateState, 1000);
-
-    activeCall.on(CallEvent.State, updateState);
-    activeCall.on(CallEvent.FeedsChanged, updateState);
-    activeCall.on(CallEvent.LocalHoldUnhold, updateState);
-    activeCall.on(CallEvent.RemoteHoldUnhold, updateState);
-
-    return () => {
-      clearInterval(interval);
-      activeCall.removeListener(CallEvent.State, updateState);
-      activeCall.removeListener(CallEvent.FeedsChanged, updateState);
-      activeCall.removeListener(CallEvent.LocalHoldUnhold, updateState);
-      activeCall.removeListener(CallEvent.RemoteHoldUnhold, updateState);
-    };
-  }, [activeCall, callState, setMuted, setCameraOff]);
-
-  // Ensure video elements stay in sync with streams
-  useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      if (localVideoRef.current.srcObject !== localStream) {
-        localVideoRef.current.srcObject = localStream;
-      }
+      setScreensharing(activeCall.isScreensharing());
+    } else if (activeGroupCall) {
+      setMuted(activeGroupCall.isMicrophoneMuted());
+      setCameraOff(activeGroupCall.isLocalVideoMuted());
+      setScreensharing(activeGroupCall.isScreensharing());
     }
-  }, [localStream]);
+  }, [activeCall, activeGroupCall, setMuted, setCameraOff, setScreensharing]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      if (remoteVideoRef.current.srcObject !== remoteStream) {
-        remoteVideoRef.current.srcObject = remoteStream;
-      }
+    if (showSettings) {
+      callManager.getDevices().then(setDevices);
     }
-    if (audioRef.current && remoteStream) {
-      if (audioRef.current.srcObject !== remoteStream) {
-        audioRef.current.srcObject = remoteStream;
-      }
+  }, [showSettings]);
+
+  const renderFeed = (feed: CallFeed, className = "") => {
+    const feedId = (feed as { feedId?: string }).feedId || `${feed.userId}-${feed.purpose}`;
+    return (
+      <ParticipantTile 
+        key={feedId} 
+        feed={feed} 
+        isLocal={feed.isLocal()} 
+        className={className}
+        onActivity={(level: number) => {
+          speakerLevels.current[feedId] = level;
+        }}
+
+      />
+    );
+  };
+
+  const renderLayout = () => {
+    const screenshareFeeds = callFeeds.filter(f => f.purpose === 'm.screenshare');
+    const feedsCount = callFeeds.length;
+
+    // Presenter View: Pin screenshare, and ONLY show screenshare
+    // Fallback to Speaker View logic if no screenshare active
+    const effectiveLayout = (callContentLayout === 'presenter' && screenshareFeeds.length === 0) ? 'speaker' : callContentLayout;
+
+    if (effectiveLayout === 'presenter' && screenshareFeeds.length > 0) {
+      const mainFeedId = prioritizedFeedId || (screenshareFeeds[0] as { feedId?: string }).feedId;
+      const mainFeed = callFeeds.find(f => (f as { feedId?: string }).feedId === mainFeedId && f.purpose === 'm.screenshare') || screenshareFeeds[0];
+      
+      return (
+        <div className="flex-1 flex overflow-hidden bg-black relative group">
+          <div className="flex-1 relative">
+            {/* aspect-auto to allow fill */}
+            {renderFeed(mainFeed, "h-full w-full !aspect-auto")}
+          </div>
+          {/* Overlay switch if multiple screenshares */}
+          {screenshareFeeds.length > 1 && (
+            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              {screenshareFeeds.map((f, i) => (
+                <button 
+                  key={(f as { feedId?: string }).feedId}
+                  onClick={() => setPrioritizedFeedId((f as { feedId?: string }).feedId || null)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-xl ${
+                    (f as { feedId?: string }).feedId === (mainFeed as { feedId?: string }).feedId 
+                      ? 'bg-discord-accent text-white border-white/20' 
+                      : 'bg-black/60 text-discord-text-muted border-transparent hover:text-white'
+                  }`}
+                >
+                  Screen {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
     }
-  }, [remoteStream]);
+
+    // Speaker View: Pin loudest speaker
+    if (effectiveLayout === 'speaker' && callFeeds.length > 0) {
+      const mainFeedId = prioritizedFeedId || activeSpeakerId || (callFeeds[0] as { feedId?: string }).feedId;
+      const mainFeed = callFeeds.find(f => (f as { feedId?: string }).feedId === mainFeedId) || callFeeds[0];
+      const otherFeeds = callFeeds.filter(f => (f as { feedId?: string }).feedId !== (mainFeed as { feedId?: string }).feedId);
+
+      return (
+        <div className="flex-1 flex flex-col overflow-hidden p-2 gap-2">
+          <div className="flex-[4] relative">
+            {renderFeed(mainFeed, "h-full w-full !aspect-auto")}
+          </div>
+          {otherFeeds.length > 0 && (
+            <div className="flex-1 flex flex-row gap-2 overflow-x-auto no-scrollbar h-32 py-1">
+              {otherFeeds.map(f => (
+                <div key={(f as { feedId?: string }).feedId || f.userId} className="w-44 shrink-0 cursor-pointer hover:ring-2 hover:ring-discord-accent rounded-lg overflow-hidden transition-all" onClick={() => setPrioritizedFeedId((f as { feedId?: string }).feedId || null)}>
+                  {renderFeed(f, "h-full w-full")}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Grid View (Default)
+    // Adjust grid columns based on count to keep tiles large and aspect-video
+    let gridClasses = "grid-cols-1";
+    if (feedsCount === 2) gridClasses = "grid-cols-1 sm:grid-cols-2";
+    else if (feedsCount <= 4) gridClasses = "grid-cols-2";
+    else if (feedsCount <= 6) gridClasses = "grid-cols-2 sm:grid-cols-3";
+    else gridClasses = "grid-cols-3 sm:grid-cols-4";
+
+    return (
+      <div className={`flex-1 overflow-y-auto p-4 grid gap-4 no-scrollbar items-center content-center ${gridClasses}`}>
+        {callFeeds.map((feed) => (
+          <div key={(feed as { feedId?: string }).feedId || feed.userId} className="w-full">
+            {renderFeed(feed, "w-full h-full")}
+          </div>
+        ))}
+        {feedsCount === 0 && (
+          <div className="col-span-full flex items-center justify-center text-discord-text-muted animate-pulse font-bold tracking-widest uppercase text-xs">
+            Waiting for participants...
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const toggleMute = () => {
-    if (activeCall) {
-      callManager.warmupAudioContext();
-      const newMuted = !isMuted;
-      callManager.setMuted(newMuted);
-      setMuted(newMuted);
-    }
+    callManager.warmupAudioContext();
+    const newMuted = !isMuted;
+    callManager.setMuted(newMuted);
+    setMuted(newMuted);
   };
 
   const toggleCamera = async () => {
-    if (activeCall) {
-      callManager.warmupAudioContext();
-      const newCameraOff = !isCameraOff;
-      await callManager.setVideoMuted(newCameraOff);
-      setCameraOff(newCameraOff);
-    }
+    callManager.warmupAudioContext();
+    const newCameraOff = !isCameraOff;
+    await callManager.setVideoMuted(newCameraOff);
+    setCameraOff(newCameraOff);
   };
 
-  if (!activeCall && !incomingCall) return null;
-  if (activeCall && isCallMinimized) return null;
+  const toggleScreensharing = async () => {
+    callManager.warmupAudioContext();
+    const newScreensharing = !isScreensharing;
+    await callManager.setScreensharingEnabled(newScreensharing);
+    setScreensharing(newScreensharing);
+  };
+
+  if (!activeCall && !activeGroupCall && !incomingCall) return null;
+  if ((activeCall || activeGroupCall) && isCallMinimized) return null;
 
   if (incomingCall) {
     return (
@@ -212,81 +237,188 @@ const ActiveCall: React.FC = () => {
     );
   }
 
-  if (activeCall) {
-    return (
-      <div className="fixed inset-0 pointer-events-none z-50">
-        <Draggable nodeRef={activeNodeRef} handle=".drag-handle" bounds="parent">
-          <div ref={activeNodeRef} className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto rounded-lg bg-discord-sidebar p-4 shadow-xl border border-discord-hover w-[400px]">
-            <div className="drag-handle flex cursor-grab active:cursor-grabbing items-center justify-center mb-2 -mt-2 opacity-50 hover:opacity-100 transition">
-              <GripHorizontal className="h-5 w-5 text-discord-text-muted" />
-            </div>
-            
-            <div className="flex justify-between items-center mb-4">
-               <div className="flex items-center space-x-2">
-                 <h3 className="text-white font-bold text-sm uppercase">Active Call: {callState}</h3>
-                 <button 
-                   onClick={() => setCallMinimized(true)}
-                   className="rounded p-1 hover:bg-discord-hover text-discord-text-muted hover:text-white transition"
-                   title="Minimize"
-                 >
-                   <Minus className="h-4 w-4" />
-                 </button>
-               </div>
-               <span className="text-xs text-discord-text-muted animate-pulse">{!isCameraOff ? 'Video' : 'Voice'}</span>
-            </div>
-            
-            <div className="mb-4 rounded-md bg-discord-black/60 p-3 border border-white/5">
-              <div className="flex justify-between items-center mb-1">
-                <div className="text-[10px] text-discord-text-muted font-bold uppercase tracking-widest">Microphone Activity</div>
-                {isMuted && <span className="text-[9px] bg-red-500/20 text-red-500 px-1 rounded">MUTED</span>}
-              </div>
-              <MicActivityIndicator stream={localStream} />
-            </div>
+  const containerClasses = callWindowingMode === 'integrated' 
+    ? "relative w-full h-full flex flex-col bg-discord-dark overflow-hidden"
+    : `fixed z-50 flex flex-col bg-discord-dark shadow-2xl transition-all duration-300 ${
+        isMaximized ? 'inset-4 rounded-xl' : 'bottom-4 right-4 w-[480px] h-[360px] rounded-lg border border-white/10'
+      }`;
 
-            {/* Video Area */}
-            <div className={`relative mb-4 bg-black rounded-lg overflow-hidden transition-all duration-500 shadow-inner ${!isCameraOff ? 'h-56' : 'h-0 opacity-0 mb-0'}`}>
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-              <div className="absolute bottom-2 right-2 w-32 h-24 overflow-hidden rounded-md border-2 border-discord-border shadow-lg bg-discord-dark">
-                <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-2 right-2 w-full h-full object-cover" />
-                {isCameraOff && <div className="flex h-full items-center justify-center text-discord-text-muted bg-discord-dark"><VideoOff className="h-6 w-6" /></div>}
-              </div>
-            </div>
+  const content = (
+    <div 
+      ref={callWindowingMode !== 'integrated' ? activeNodeRef : null}
+      className={containerClasses}
+    >
+      {/* Header */}
+      <div className={`flex h-10 items-center justify-between px-4 bg-discord-nav/50 backdrop-blur-md shrink-0 ${callWindowingMode !== 'integrated' ? 'drag-handle cursor-move' : ''}`}>
+        <div className="flex items-center space-x-2">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+          <span className="text-xs font-bold text-white uppercase tracking-widest">
+            {activeGroupCall ? 'Group Call' : 'Private Call'}
+          </span>
+        </div>
+        <div className="flex items-center space-x-2">
+          {/* Layout Switchers */}
+          <div className="flex bg-black/20 rounded p-0.5 mr-2">
+            <button 
+              onClick={() => setCallContentLayout('grid')}
+              className={`p-1 rounded transition ${callContentLayout === 'grid' ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:text-white'}`}
+              title="Grid View"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => setCallContentLayout('speaker')}
+              className={`p-1 rounded transition ${callContentLayout === 'speaker' ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:text-white'}`}
+              title="Speaker View"
+            >
+              <User className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => setCallContentLayout('presenter')}
+              className={`p-1 rounded transition ${callContentLayout === 'presenter' ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:text-white'}`}
+              title="Presenter View"
+            >
+              <Presentation className="h-4 w-4" />
+            </button>
+          </div>
 
-            {/* Audio element for voice calls */}
-            <audio ref={audioRef} autoPlay />
+          <button 
+            onClick={() => setShowSettings(!showSettings)}
+            className={`p-1 rounded transition ${showSettings ? 'bg-discord-accent text-white' : 'text-discord-text-muted hover:bg-white/10 hover:text-white'}`}
+            title="Settings"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
 
-            <div className="flex justify-center space-x-4">
-              <button 
-                onClick={toggleMute}
-                className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${isMuted ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
-                title={isMuted ? "Unmute" : "Mute"}
+          {/* Window Mode Toggles */}
+          {callWindowingMode === 'integrated' ? (
+            <button 
+              onClick={() => setCallWindowingMode('pip')}
+              className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
+              title="Pop out"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          ) : (
+            <button 
+              onClick={() => setCallWindowingMode('integrated')}
+              className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
+              title="Integrate into chat"
+            >
+              <Square className="h-4 w-4" />
+            </button>
+          )}
+
+          {callWindowingMode !== 'integrated' && (
+            <button 
+              onClick={() => setIsMaximized(!isMaximized)}
+              className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
+            >
+              {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+          )}
+          
+          <button 
+            onClick={() => {
+              setCallWindowingMode('minimized');
+              setCallMinimized(true);
+            }}
+            className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
+            title="Minimize"
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Overlay */}
+      {showSettings && (
+        <div className="absolute top-10 right-2 left-2 z-10 bg-discord-sidebar/95 backdrop-blur-xl p-4 rounded-lg border border-discord-hover shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+          <h3 className="text-white font-bold mb-4 flex items-center">
+            <Settings className="h-4 w-4 mr-2" /> Call Settings
+          </h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-discord-text-muted uppercase mb-1 block">Microphone</label>
+              <select 
+                className="w-full bg-discord-black text-white text-sm rounded px-2 py-1 outline-none border border-transparent focus:border-discord-accent transition"
+                onChange={(e) => callManager.setAudioInputDevice(e.target.value)}
               >
-                {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
-              </button>
-              
-              <button 
-                onClick={toggleCamera}
-                className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${!isCameraOff ? 'bg-discord-accent hover:bg-opacity-90' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
-                title={!isCameraOff ? "Turn Camera Off" : "Turn Camera On"}
+                {devices.audioIn.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Default Microphone'}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-discord-text-muted uppercase mb-1 block">Camera</label>
+              <select 
+                className="w-full bg-discord-black text-white text-sm rounded px-2 py-1 outline-none border border-transparent focus:border-discord-accent transition"
+                onChange={(e) => callManager.setVideoInputDevice(e.target.value)}
               >
-                {!isCameraOff ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
-              </button>
-
-              <button 
-                onClick={() => callManager.hangupCall()}
-                className="h-12 w-12 rounded-full bg-red-500 hover:bg-red-600 shadow-lg flex items-center justify-center text-white transition-all duration-200 hover:rotate-12"
-                title="End Call"
-              >
-                <PhoneOff className="h-6 w-6" />
-              </button>
+                {devices.videoIn.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Default Camera'}</option>)}
+              </select>
             </div>
           </div>
-        </Draggable>
+          
+          <button 
+            onClick={() => setShowSettings(false)}
+            className="mt-6 w-full bg-discord-accent hover:bg-discord-accent/80 text-white py-2 rounded text-sm font-bold transition"
+          >
+            Close Settings
+          </button>
+        </div>
+      )}
+
+      {/* Render selected Layout */}
+      {renderLayout()}
+
+      {/* Controls */}
+      <div className="flex h-20 items-center justify-center space-x-4 bg-discord-nav/30 backdrop-blur-md shrink-0">
+        <button 
+          onClick={toggleMute}
+          className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
+          title={isMuted ? "Unmute" : "Mute"}
+        >
+          {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+        </button>
+        
+        <button 
+          onClick={toggleCamera}
+          className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${!isCameraOff ? 'bg-discord-accent hover:bg-opacity-90' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
+          title={!isCameraOff ? "Turn Camera Off" : "Turn Camera On"}
+        >
+          {!isCameraOff ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
+        </button>
+
+        <button 
+          onClick={toggleScreensharing}
+          className={`h-12 w-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-200 ${isScreensharing ? 'bg-green-500 hover:bg-green-600' : 'bg-discord-hover hover:bg-[#4E5058]'}`}
+          title={isScreensharing ? "Stop Screensharing" : "Start Screensharing"}
+        >
+          {isScreensharing ? <MonitorOff className="h-6 w-6" /> : <Monitor className="h-6 w-6" />}
+        </button>
+
+        <button 
+          onClick={() => callManager.hangupCall()}
+          className="h-12 w-12 rounded-full bg-red-500 hover:bg-red-600 shadow-lg flex items-center justify-center text-white transition-all duration-200 hover:rotate-12"
+          title="End Call"
+        >
+          <PhoneOff className="h-6 w-6" />
+        </button>
       </div>
-    );
+    </div>
+  );
+
+  if (callWindowingMode === 'integrated') {
+    return content;
   }
 
-  return null;
+  if (isCallMinimized) return null;
+
+  return (
+    <Draggable nodeRef={activeNodeRef} bounds="parent" disabled={isMaximized} handle=".drag-handle">
+      {content}
+    </Draggable>
+  );
 };
 
 export default ActiveCall;

@@ -1,31 +1,52 @@
 @import "tailwindcss";
 
 :root {
-  --discord-dark: #313338;
-  --discord-sidebar: #2b2d31;
-  --discord-nav: #1e1f22;
-  --discord-hover: #3f4147;
-  --discord-text: #dbdee1;
-  --discord-text-muted: #949ba4;
-  --discord-accent: #5865f2;
+  /* Core Base Colors (OLED Defaults) */
+  --bg-main: #000000;
+  --bg-sidebar: #000000;
+  --bg-nav: #000000;
+  --bg-hover: #1a1a1a;
+  
+  /* Text and Lines */
+  --text-main: #e0e0e0;
+  --text-muted: #808080;
+  --border-main: #262626;
+  
+  /* Accents */
+  --accent-primary: #ffffff;
 }
 
 @theme {
-  --color-discord-dark: var(--discord-dark);
-  --color-discord-sidebar: var(--discord-sidebar);
-  --color-discord-nav: var(--discord-nav);
-  --color-discord-hover: var(--discord-hover);
-  --color-discord-text: var(--discord-text);
-  --color-discord-text-muted: var(--discord-text-muted);
-  --color-discord-accent: var(--discord-accent);
+  --color-bg-main: var(--bg-main);
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-bg-nav: var(--bg-nav);
+  --color-bg-hover: var(--bg-hover);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  --color-border-main: var(--border-main);
+  --color-accent-primary: var(--accent-primary);
+  
+  /* Map legacy discord classes to new variables for compatibility during transition */
+  --color-discord-dark: var(--bg-main);
+  --color-discord-sidebar: var(--bg-sidebar);
+  --color-discord-nav: var(--bg-nav);
+  --color-discord-hover: var(--bg-hover);
+  --color-discord-text: var(--text-main);
+  --color-discord-text-muted: var(--text-muted);
+  --color-discord-accent: var(--accent-primary);
+  --color-discord-border: var(--border-main);
 }
 
 body {
-  @apply bg-discord-dark text-discord-text antialiased;
+  @apply bg-bg-main text-text-main antialiased;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Unique monospace aesthetic */
+  font-family: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 #root {
   height: 100vh;
 }
+
+/* Custom CSS Injection Target */
+#reach-custom-css-root {}

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
-import { Key } from 'lucide-react';
+import { ClientEvent } from 'matrix-js-sdk';
+import { ShieldAlert, Key, X, Loader2 } from 'lucide-react';
+import { cn } from '../../utils/cn';
 
 const SecurityRecovery: React.FC = () => {
   const client = useMatrixClient();
@@ -11,73 +13,99 @@ const SecurityRecovery: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
 
-  useEffect(() => {
-    const checkRecovery = async () => {
-      if (!client) return;
+  const checkRecovery = useCallback(async () => {
+    if (!client) return;
+    
+    // Wait for sync to be ready so we have the latest server state
+    const syncState = client.getSyncState();
+    if (syncState !== 'PREPARED' && syncState !== 'SYNCING') return;
+
+    try {
+      const crypto = matrixService.getCrypto();
+      if (!crypto) return;
+
+      // 1. Check if we are already verified (Cross-signing signed by owner)
+      const userId = client.getUserId();
+      const deviceId = client.getDeviceId();
+      if (userId && deviceId) {
+        const verificationStatus = await crypto.getDeviceVerificationStatus(userId, deviceId);
+        if (verificationStatus?.isVerified()) {
+          setNeedsRecovery(false);
+          return;
+        }
+      }
+
+      // 2. Check if cross-signing private keys are cached locally.
+      const crossSigningStatus = await crypto.getCrossSigningStatus?.();
+      if (crossSigningStatus?.privateKeysCachedLocally?.masterKey) {
+        setNeedsRecovery(false);
+        return;
+      }
+
+      // 3. Check key backup trust. 
+      const backupInfo = await crypto.getKeyBackupInfo();
+      if (backupInfo) {
+        const trust = await crypto.isKeyBackupTrusted(backupInfo);
+        if (!trust.trusted) {
+          setNeedsRecovery(true);
+          return;
+        }
+      }
+
+      const missingKeys = crossSigningStatus &&
+        (!crossSigningStatus.publicKeysOnDevice ||
+          !crossSigningStatus.privateKeysCachedLocally?.masterKey);
       
-      const syncState = client.getSyncState();
-      if (syncState !== 'PREPARED' && syncState !== 'SYNCING') return;
+      setNeedsRecovery(!!missingKeys);
+    } catch (e) {
+      console.error('Error checking recovery status:', e);
+    }
+  }, [client]);
 
-      try {
-        const isCryptoEnabled = matrixService.isCryptoEnabled();
-        if (!isCryptoEnabled) return;
+  useEffect(() => {
+    if (!client) return;
 
-        const crypto = matrixService.getCrypto();
-        const getCrossSigningStatus = crypto?.getCrossSigningStatus?.bind(crypto);
-        
-        const status = getCrossSigningStatus ? await getCrossSigningStatus() : null;
-        const needsBoot = !status?.publicKeysOnDevice || !status?.privateKeysCachedLocally?.masterKey;
-
-        if (needsBoot) setNeedsRecovery(true);
-        else setNeedsRecovery(false);
-      } catch (e) {
-        console.error("Error checking recovery status:", e);
+    const onSync = (state: string) => {
+      if (state === 'PREPARED' || state === 'SYNCING') {
+        checkRecovery();
       }
     };
 
-    const interval = setInterval(checkRecovery, 10000);
+    client.on(ClientEvent.Sync, onSync);
     checkRecovery();
-    return () => clearInterval(interval);
-  }, [client]);
+
+    return () => {
+      client.removeListener(ClientEvent.Sync, onSync);
+    };
+  }, [client, checkRecovery]);
 
   const handleRecover = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!client || !recoveryKey.trim()) return;
+    if (!recoveryKey.trim()) return;
 
     setLoading(true);
-    setStatus('Attempting recovery...');
-
+    setStatus('Verifying key...');
+    
     try {
-      await matrixService.withRecoveryKey(recoveryKey, async () => {
-        // High-level method to handle everything: secrets + key backup
-        setStatus('Restoring secrets and backup...');
+      await matrixService.withRecoveryKey(recoveryKey.trim(), async () => {
         const crypto = matrixService.getCrypto();
-        if (crypto?.loadSessionBackupPrivateKeyFromSecretStorage) {
-            await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
-            await crypto.restoreKeyBackup();
-        }
-        
-        // Explicitly trigger a room decryption retry
-        const rooms = client.getRooms();
-        for (const room of rooms) {
-          const events = room.getLiveTimeline().getEvents();
-          for (const event of events) {
-            if (event.isEncrypted() && event.isDecryptionFailure()) {
-               await client.decryptEventIfNeeded(event);
-            }
-          }
-        }
-      });
+        if (!crypto) throw new Error('Crypto not initialized');
 
-      setStatus('Recovery successful!');
-      setTimeout(() => {
-        setIsHidden(true);
+        setStatus('Restoring cross-signing...');
+        await crypto.bootstrapCrossSigning({ setupNewCrossSigning: false });
+
+        setStatus('Restoring message backup...');
+        if (crypto.loadSessionBackupPrivateKeyFromSecretStorage) {
+            await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
+        }
+        await crypto.restoreKeyBackup();
+        
+        setStatus('Success!');
         setNeedsRecovery(false);
-      }, 2000);
-    } catch (error) {
-      console.error('Recovery failed:', error);
-      const message = error instanceof Error ? error.message : 'Invalid key';
-      setStatus(`Failed: ${message}`);
+      });
+    } catch (err) {
+      console.error(err);
+      setStatus('Failed: ' + (err instanceof Error ? err.message : 'Bad key'));
     } finally {
       setLoading(false);
     }
@@ -86,40 +114,60 @@ const SecurityRecovery: React.FC = () => {
   if (!needsRecovery || isHidden) return null;
 
   return (
-    <div className="absolute bottom-4 right-4 w-80 rounded-lg bg-discord-sidebar p-4 shadow-lg border border-discord-hover z-50">
-      <div className="flex items-center mb-3">
-        <Key className="h-5 w-5 text-discord-accent mr-2" />
-        <h3 className="font-bold text-white">Verify Session</h3>
-      </div>
-      <p className="text-xs text-discord-text-muted mb-4">
-        Enter your Security Phrase or Recovery Key to decrypt past messages.
-      </p>
-      <form onSubmit={handleRecover} className="space-y-3">
-        <input
-          type="password"
-          value={recoveryKey}
-          onChange={(e) => setRecoveryKey(e.target.value)}
-          placeholder="Security Phrase or Key"
-          className="w-full rounded bg-discord-nav p-2 text-sm text-discord-text outline-none focus:ring-1 focus:ring-discord-accent"
-        />
-        {status && <p className="text-xs text-discord-accent">{status}</p>}
-        <div className="flex space-x-2">
-          <button
-            type="submit"
-            disabled={loading || !recoveryKey}
-            className="flex-1 rounded bg-discord-accent py-1.5 text-sm font-bold text-white transition hover:bg-opacity-90 disabled:opacity-50"
-          >
-            {loading ? 'Decrypting...' : 'Decrypt'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsHidden(true)}
-            className="rounded bg-discord-hover px-3 py-1.5 text-sm font-bold text-white transition hover:bg-[#4E5058]"
-          >
-            Skip
+    <div className="fixed bottom-4 right-4 z-50 w-80 animate-in slide-in-from-right-4 duration-500 font-mono">
+      <div className="overflow-hidden rounded-2xl border border-accent-primary/30 bg-bg-sidebar shadow-2xl shadow-black/50">
+        <div className="bg-accent-primary/10 p-4 border-b border-accent-primary/20 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <ShieldAlert className="h-5 w-5 text-accent-primary" />
+            <h3 className="text-xs font-black uppercase tracking-widest text-white italic">Verify Session</h3>
+          </div>
+          <button onClick={() => setIsHidden(true)} className="text-text-muted hover:text-white transition">
+            <X className="h-4 w-4" />
           </button>
         </div>
-      </form>
+        
+        <div className="p-5">
+          <p className="mb-4 text-[11px] font-medium leading-relaxed text-text-muted uppercase tracking-tighter">
+            Access your encrypted messages by entering your Security Key.
+          </p>
+
+          <form onSubmit={handleRecover} className="space-y-3">
+            <div className="relative">
+              <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted opacity-50" />
+              <input 
+                type="password"
+                value={recoveryKey}
+                onChange={(e) => setRecoveryKey(e.target.value)}
+                placeholder="Recovery Key..."
+                className="w-full rounded-xl bg-bg-nav py-2.5 pl-10 pr-4 text-xs text-white outline-none border border-border-main focus:border-accent-primary transition-all"
+              />
+            </div>
+            
+            <button 
+              disabled={loading || !recoveryKey.trim()}
+              className="flex w-full items-center justify-center rounded-xl bg-accent-primary py-2.5 text-xs font-black uppercase tracking-widest text-bg-main transition hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm Identity'}
+            </button>
+
+            {status && (
+              <div className={cn(
+                "rounded-lg p-2 text-center text-[10px] font-bold uppercase tracking-tighter animate-in fade-in duration-300",
+                status.includes('Success') ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+              )}>
+                {status}
+              </div>
+            )}
+          </form>
+          
+          <button 
+            onClick={() => setIsHidden(true)}
+            className="mt-4 w-full text-center text-[9px] font-bold uppercase tracking-widest text-text-muted hover:text-white transition"
+          >
+            I'll do this later
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

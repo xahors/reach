@@ -24,13 +24,7 @@ export const useSpaceRooms = (spaceId: string | null) => {
 
     // Get children of the space
     const childrenEvents = space.currentState.getStateEvents('m.space.child');
-    if (!Array.isArray(childrenEvents)) {
-      Promise.resolve().then(() => {
-        setRooms([]);
-        setLoading(false);
-      });
-      return;
-    }
+    if (!childrenEvents) return;
 
     const childRoomIds = childrenEvents
       .filter((event) => event.getContent().via)

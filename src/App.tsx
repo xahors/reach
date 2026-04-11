@@ -11,6 +11,7 @@ import ChatArea from './components/chat/ChatArea';
 import SecurityRecovery from './components/auth/SecurityRecovery';
 import ActiveCall from './components/calls/ActiveCall';
 import SettingsModal from './components/ui/SettingsModal';
+import ThemeManager from './components/ui/ThemeManager';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   constructor(props: { children: ReactNode }) {
@@ -43,7 +44,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 function MainApp() {
   const { isSynced, syncState } = useMatrixSync();
-  const { activeRoomId, setChannelDetailsOpen } = useAppStore();
+  const { activeRoomId, setChannelDetailsOpen, callWindowingMode } = useAppStore();
+  const [showRetry, setShowRetry] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowRetry(true), 10000);
+    return () => clearTimeout(timer);
+  }, [isSynced]);
 
   // Close channel details when switching rooms
   useEffect(() => {
@@ -55,20 +62,33 @@ function MainApp() {
       <div className="flex h-screen items-center justify-center bg-discord-nav text-white">
         <div className="text-center">
           <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-discord-accent border-t-transparent mx-auto"></div>
-          <p className="text-discord-text-muted">Synchronizing with Matrix...</p>
-          <p className="text-xs text-discord-text-muted mt-2">{syncState}</p>
+          <p className="text-discord-text-muted font-medium">Synchronizing with Matrix...</p>
+          <p className="text-xs text-discord-text-muted/60 mt-2 font-mono uppercase tracking-widest">{syncState || 'INITIALIZING'}</p>
+          
+          {showRetry && (
+            <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+              <p className="text-xs text-discord-text-muted mb-4 max-w-xs mx-auto">Taking longer than usual? Your network might be slow, or the session needs a restart.</p>
+              <button 
+                onClick={() => window.location.reload()}
+                className="rounded bg-discord-hover px-4 py-2 text-xs font-bold text-white transition hover:bg-discord-accent"
+              >
+                RELOAD APPLICATION
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-discord-dark relative">
+    <div className="flex h-screen overflow-hidden bg-bg-main relative">
+      <ThemeManager />
       <Sidebar />
       <ChannelList />
       <ChatArea />
       <SecurityRecovery />
-      <ActiveCall />
+      {callWindowingMode !== 'integrated' && <ActiveCall />}
       <SettingsModal />
     </div>
   );
@@ -80,20 +100,40 @@ function App() {
 
   useEffect(() => {
     const initMatrix = async () => {
+      // Safety timeout to not hang forever if sync is slow
+      const timeout = setTimeout(() => {
+        setInitializing(false);
+      }, 8000);
+
       try {
-        const client = await matrixService.loginWithStoredToken();
-        if (client) {
-          setLoggedIn(true, client.getUserId());
+        const existingClient = matrixService.getClient();
+        if (existingClient) {
+          console.log('Client already exists, reconnecting...');
+          await matrixService.reconnect();
+          setLoggedIn(true, existingClient.getUserId());
           callManager.init();
+        } else {
+          const client = await matrixService.loginWithStoredToken();
+          if (client) {
+            setLoggedIn(true, client.getUserId());
+            callManager.init();
+          }
         }
       } catch (error) {
         console.error('Failed to initialize Matrix client:', error);
       } finally {
+        clearTimeout(timeout);
         setInitializing(false);
       }
     };
 
     initMatrix();
+
+    return () => {
+      // In development HMR or when unmounting, stop the old client sync loop
+      // but keep the client instance alive for the next mount
+      matrixService.stop(false);
+    };
   }, [setLoggedIn]);
 
   if (initializing) {

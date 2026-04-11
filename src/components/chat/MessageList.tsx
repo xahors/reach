@@ -1,223 +1,162 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
-import { Loader2, ArrowDown } from 'lucide-react';
-import { usePinnedEvents } from '../../hooks/usePinnedEvents';
-import { useAppStore } from '../../store/useAppStore';
+import { useMatrixClient } from '../../hooks/useMatrixClient';
+import { Hash, ChevronUp, Loader2 } from 'lucide-react';
 
 interface MessageListProps {
+  roomId: string;
   messages: MatrixEvent[];
   loading?: boolean;
-  onPaginate?: () => Promise<void>;
+  onPaginate?: () => void;
   canPaginate?: boolean;
   onScrollBottom?: () => void;
-  onJumpToEvent: (eventId: string) => void;
+  onJumpToEvent?: (id: string) => void;
   readMarkerId?: string;
-  roomId: string;
 }
 
 const MessageList: React.FC<MessageListProps> = ({ 
+  roomId, 
   messages, 
   loading, 
   onPaginate, 
-  canPaginate,
+  canPaginate, 
   onScrollBottom,
-  readMarkerId,
   onJumpToEvent,
-  roomId
+  readMarkerId
 }) => {
-  const { messageLoadPolicy } = useAppStore();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const readMarkerRef = useRef<HTMLDivElement>(null);
-  const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const prevMessagesLength = useRef(messages.length);
+  const client = useMatrixClient();
+  const room = client?.getRoom(roomId);
 
-  const scrollToBottom = useCallback((smooth = false) => {
-    if (scrollRef.current) {
-      if (smooth) {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-      } else {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }
-    }
-  }, []);
+  // Group messages by sender and time
+  const groupedMessages = useMemo(() => {
+    const groups: {
+      id: string;
+      events: MatrixEvent[];
+      showDetails: boolean;
+    }[] = [];
 
-  const scrollToMarker = useCallback(() => {
-    if (readMarkerRef.current) {
-      readMarkerRef.current.scrollIntoView({ block: 'center' });
-      return true;
-    }
-    return false;
-  }, []);
-
-  const internalJumpToEvent = useCallback((eventId: string) => {
-    const element = document.getElementById(`message-${eventId}`);
-    if (element) {
-      element.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      setHighlightedEventId(eventId);
-      setTimeout(() => setHighlightedEventId(null), 2000);
-    } else {
-      console.warn(`Message ${eventId} not found in DOM`);
-      // Propagate up if we can't find it locally
-      onJumpToEvent(eventId);
-    }
-  }, [onJumpToEvent]);
-
-  // 1. Safety fallback
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!isReady) setIsReady(true);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [isReady]);
-
-  // 2. Initial positioning and scroll restoration
-  useEffect(() => {
-    if (messages.length === 0) return;
-
-    if (!isReady) {
-      if (messageLoadPolicy === 'latest') {
-        requestAnimationFrame(() => {
-          scrollToBottom();
-          setTimeout(() => scrollToBottom(), 50);
-        });
-      } else {
-        requestAnimationFrame(() => {
-          scrollToMarker();
-        });
-      }
-      const timer = setTimeout(() => setIsReady(true), 300);
-      return () => clearTimeout(timer);
-    } else if (scrollRef.current && prevScrollHeight !== null) {
-      const currentHeight = scrollRef.current.scrollHeight;
-      scrollRef.current.scrollTop = currentHeight - prevScrollHeight;
-      setTimeout(() => setPrevScrollHeight(null), 0);
-    }
-  }, [messages, isReady, prevScrollHeight, messageLoadPolicy, scrollToBottom, scrollToMarker]);
-
-  // 3. Auto-scroll on new messages
-  useEffect(() => {
-    if (!isReady || !scrollRef.current || loading || messages.length === 0) return;
-    
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
-    const lastMessage = messages[messages.length - 1];
-    const isLocalEcho = lastMessage.getTxnId() && (!lastMessage.getId() || lastMessage.isSending());
-
-    if (isNearBottom || isLocalEcho) {
-      scrollToBottom(true);
-      onScrollBottom?.();
-    }
-  }, [messages, isReady, loading, onScrollBottom, scrollToBottom]);
-
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current || !isReady || loading) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    
-    if (scrollTop < 150 && canPaginate && onPaginate) {
-      setPrevScrollHeight(scrollHeight);
-      onPaginate().catch(console.error);
-    }
-
-    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-    setShowJumpToLatest(distanceToBottom > 800);
-
-    if (distanceToBottom < 50) {
-      onScrollBottom?.();
-    }
-  }, [loading, canPaginate, onPaginate, isReady, onScrollBottom]);
-
-  const RenderedMessages = () => {
-    const { isEventPinned, pinEvent, unpinEvent } = usePinnedEvents(roomId);
-    
-    return messages.map((event, index) => {
+    messages.forEach((event, index) => {
       const prevEvent = index > 0 ? messages[index - 1] : null;
-      const eventId = event.getId();
-      if (!eventId) return null; // Don't render events without IDs
-
-      const isReadMarker = readMarkerId && eventId === readMarkerId;
-      const hasNewMessagesBelow = isReadMarker && index < messages.length - 1;
-      const isHighlighted = eventId === highlightedEventId;
       
-      let isGrouped = false;
-      if (prevEvent) {
-        const prevSender = prevEvent.getSender();
-        const currentSender = event.getSender();
-        const prevTime = prevEvent.getTs();
-        const currentTime = event.getTs();
-        const fiveMinutes = 5 * 60 * 1000;
-        if (prevSender === currentSender && (currentTime - prevTime) < fiveMinutes) {
-          isGrouped = true;
-        }
+      const isStateEvent = event.isState();
+      const isCallEvent = event.getType().startsWith('m.call') || event.getType().startsWith('org.matrix.msc3401.call');
+      
+      // Don't group state events or call events
+      let isContinuation = false;
+      if (prevEvent && !isStateEvent && !isCallEvent) {
+        const timeDiff = event.getTs() - prevEvent.getTs();
+        const sameSender = event.getSender() === prevEvent.getSender();
+        const prevWasNormal = !prevEvent.isState() && 
+                             !prevEvent.getType().startsWith('m.call') && 
+                             !prevEvent.getType().startsWith('org.matrix.msc3401.call');
+        
+        // Group if same sender within 5 minutes
+        isContinuation = sameSender && prevWasNormal && timeDiff < 5 * 60 * 1000;
       }
 
-      return (
-        <div 
-          key={eventId} 
-          id={`message-${eventId}`}
-          ref={isReadMarker ? readMarkerRef : null}
-          className={`transition-colors duration-1000 ${isHighlighted ? 'bg-discord-accent/20' : ''}`}
-        >
-          <MessageItem 
-            event={event} 
-            isGrouped={isGrouped} 
-            onJumpToReply={internalJumpToEvent}
-            isPinned={isEventPinned(eventId)}
-            onPinToggle={(id, isCurrentlyPinned) => {
-              if (isCurrentlyPinned) {
-                unpinEvent(id);
-              } else {
-                pinEvent(id);
-              }
-            }}
-          />
-          {hasNewMessagesBelow && (
-            <div className="flex items-center px-4 py-2">
-              <div className="h-px flex-1 bg-discord-accent opacity-50" />
-              <span className="mx-2 text-[10px] font-bold uppercase text-discord-accent">New Messages</span>
-              <div className="h-px flex-1 bg-discord-accent opacity-50" />
-            </div>
-          )}
-        </div>
-      );
+      groups.push({
+        id: event.getId() || `local-${index}`,
+        events: [event],
+        showDetails: !isContinuation
+      });
     });
+
+    return groups;
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(() => {
+    if (shouldScrollToBottom) {
+      scrollToBottom();
+    }
+    prevMessagesLength.current = messages.length;
+  }, [messages, shouldScrollToBottom]);
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    
+    // Check if near bottom
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+    setShouldScrollToBottom(isAtBottom);
+
+    if (isAtBottom && onScrollBottom) {
+      onScrollBottom();
+    }
+
+    // Check if near top for pagination
+    if (scrollTop < 100 && canPaginate && !loading && onPaginate) {
+      onPaginate();
+    }
   };
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden">
-      <div 
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto no-scrollbar transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}
-      >
-        <div className="flex min-h-full flex-col justify-end pb-4">
-          {canPaginate && (
-            <div className="flex items-center justify-center py-4">
-              {loading ? (
-                <Loader2 className="h-6 w-6 animate-spin text-discord-accent" />
-              ) : (
-                <div className="h-6" />
-              )}
+    <div 
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto bg-bg-main no-scrollbar selection:bg-accent-primary/30"
+    >
+      <div className="flex min-h-full flex-col justify-end py-4">
+        {/* Room Welcome Header */}
+        {!canPaginate && !loading && (
+          <div className="mb-8 px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-bg-nav border border-border-main shadow-lg">
+              <Hash className="h-10 w-10 text-text-muted" />
             </div>
-          )}
-          
-          <RenderedMessages />
-          <div ref={bottomRef} className="h-px w-full" />
-        </div>
-      </div>
+            <h2 className="mb-2 text-3xl font-black text-white tracking-tighter uppercase">Welcome to #{room?.name || 'this channel'}</h2>
+            <p className="text-sm text-text-muted max-w-lg leading-relaxed font-medium">
+              This is the beginning of the <span className="text-white font-bold">#{room?.name}</span> channel. 
+              History starts here. All messages are end-to-end encrypted.
+            </p>
+            <div className="mt-6 h-px w-full bg-border-main/30" />
+          </div>
+        )}
 
-      {showJumpToLatest && (
-        <button 
-          onClick={() => scrollToBottom(true)}
-          className="absolute bottom-4 right-6 flex items-center space-x-2 rounded-full bg-discord-accent px-4 py-2 text-xs font-bold text-white shadow-lg transition hover:bg-opacity-90 active:scale-95 animate-in fade-in slide-in-from-bottom-2"
-        >
-          <ArrowDown className="h-4 w-4" />
-          <span>Jump to Latest</span>
-        </button>
-      )}
+        {loading && (
+          <div className="flex items-center justify-center py-4 space-x-2">
+            <Loader2 className="h-4 w-4 animate-spin text-accent-primary" />
+            <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Loading history...</span>
+          </div>
+        )}
+
+        {canPaginate && !loading && (
+          <div className="flex justify-center py-4">
+            <button 
+              onClick={onPaginate}
+              className="flex items-center space-x-2 rounded-full border border-border-main bg-bg-nav px-4 py-1.5 text-[10px] font-black text-text-muted transition hover:bg-bg-hover hover:text-white uppercase tracking-tighter"
+            >
+              <ChevronUp className="h-3 w-3" />
+              <span>Load older messages</span>
+            </button>
+          </div>
+        )}
+
+        {groupedMessages.map((group) => (
+          <React.Fragment key={group.id}>
+            <MessageItem 
+              event={group.events[0]} 
+              isContinuation={!group.showDetails}
+              onJumpToEvent={onJumpToEvent}
+            />
+            {readMarkerId === group.id && (
+              <div className="relative my-4 flex items-center px-4">
+                <div className="h-px flex-1 bg-red-500/50" />
+                <span className="mx-4 text-[9px] font-black text-red-500 uppercase tracking-widest bg-bg-main px-2">New Messages</span>
+                <div className="h-px flex-1 bg-red-500/50" />
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 };
