@@ -206,32 +206,73 @@ const SettingsModal: React.FC = () => {
                   <h2 className="text-lg font-bold text-white uppercase tracking-wider">Themes</h2>
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {(Object.keys(THEME_PRESETS) as Array<keyof typeof THEME_PRESETS>).map((preset) => (
-                    <button
-                      key={preset}
-                      onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
-                      className={`relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all ${
-                        themeConfig.activePreset === preset 
-                          ? 'border-accent-primary bg-bg-hover ring-4 ring-accent-primary/10' 
-                          : 'border-border-main bg-bg-nav hover:border-text-muted hover:bg-bg-hover/50'
-                      }`}
-                    >
-                      <div className="flex flex-col space-y-2">
-                        <span className={`text-sm font-bold uppercase ${themeConfig.activePreset === preset ? 'text-white' : 'text-text-muted'}`}>
-                          {preset}
-                        </span>
-                        <div className="flex space-x-1">
-                          <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
-                          <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
-                          <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['text-main'] }} />
-                        </div>
-                      </div>
-                      {themeConfig.activePreset === preset && (
-                        <Check className="absolute top-2 right-2 h-4 w-4 text-accent-primary" />
-                      )}
-                    </button>
-                  ))}
+                <div className="space-y-8">
+                  <div>
+                    <h3 className="mb-4 text-[10px] font-black uppercase text-text-muted tracking-[0.2em]">Standard</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                      {['oled', 'classic', 'slate', 'icebox'].map((presetId) => {
+                        const preset = presetId as keyof typeof THEME_PRESETS;
+                        return (
+                          <button
+                            key={preset}
+                            onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
+                            className={`relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all ${
+                              themeConfig.activePreset === preset 
+                                ? 'border-accent-primary bg-bg-hover ring-4 ring-accent-primary/10' 
+                                : 'border-border-main bg-bg-nav hover:border-text-muted hover:bg-bg-hover/50'
+                            }`}
+                          >
+                            <div className="flex flex-col space-y-2">
+                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-white' : 'text-text-muted'}`}>
+                                {preset}
+                              </span>
+                              <div className="flex space-x-1">
+                                <div className="h-4 w-4 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
+                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
+                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['text-main'] }} />
+                              </div>
+                            </div>
+                            {themeConfig.activePreset === preset && (
+                              <Check className="absolute top-2 right-2 h-3 w-3 text-accent-primary" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="mb-4 text-[10px] font-black uppercase text-text-muted tracking-[0.2em]">Accessibility</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {['protanopia', 'deuteranopia', 'tritanopia'].map((presetId) => {
+                        const preset = presetId as keyof typeof THEME_PRESETS;
+                        return (
+                          <button
+                            key={preset}
+                            onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
+                            className={`relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all ${
+                              themeConfig.activePreset === preset 
+                                ? 'border-accent-primary bg-bg-hover ring-4 ring-accent-primary/10' 
+                                : 'border-border-main bg-bg-nav hover:border-text-muted hover:bg-bg-hover/50'
+                            }`}
+                          >
+                            <div className="flex flex-col space-y-2">
+                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-white' : 'text-text-muted'}`}>
+                                {preset}
+                              </span>
+                              <div className="flex space-x-1">
+                                <div className="h-4 w-4 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
+                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
+                              </div>
+                            </div>
+                            {themeConfig.activePreset === preset && (
+                              <Check className="absolute top-2 right-2 h-3 w-3 text-accent-primary" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </section>
 

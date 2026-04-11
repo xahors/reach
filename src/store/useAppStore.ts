@@ -17,7 +17,7 @@ export type ThemeColors = {
 };
 
 export type ThemeConfig = {
-  activePreset: 'oled' | 'classic' | 'slate' | 'custom';
+  activePreset: 'oled' | 'classic' | 'slate' | 'icebox' | 'protanopia' | 'deuteranopia' | 'tritanopia' | 'custom';
   colors: ThemeColors;
   customCSS: string;
 };
@@ -52,6 +52,46 @@ export const THEME_PRESETS: Record<Exclude<ThemeConfig['activePreset'], 'custom'
     'text-muted': '#94a3b8',
     'border-main': '#1e293b',
     'accent-primary': '#38bdf8',
+  },
+  icebox: {
+    'bg-main': '#ffffff',
+    'bg-sidebar': '#f8fafc',
+    'bg-nav': '#f1f5f9',
+    'bg-hover': '#e2e8f0',
+    'text-main': '#0f172a',
+    'text-muted': '#64748b',
+    'border-main': '#cbd5e1',
+    'accent-primary': '#2563eb',
+  },
+  protanopia: {
+    'bg-main': '#000000',
+    'bg-sidebar': '#000000',
+    'bg-nav': '#000000',
+    'bg-hover': '#1a1a1a',
+    'text-main': '#ffffff',
+    'text-muted': '#a0a0a0',
+    'border-main': '#333333',
+    'accent-primary': '#0072B2', // Sky Blue (Safe)
+  },
+  deuteranopia: {
+    'bg-main': '#000000',
+    'bg-sidebar': '#000000',
+    'bg-nav': '#000000',
+    'bg-hover': '#1a1a1a',
+    'text-main': '#ffffff',
+    'text-muted': '#a0a0a0',
+    'border-main': '#333333',
+    'accent-primary': '#E69F00', // Orange (Safe)
+  },
+  tritanopia: {
+    'bg-main': '#000000',
+    'bg-sidebar': '#000000',
+    'bg-nav': '#000000',
+    'bg-hover': '#1a1a1a',
+    'text-main': '#ffffff',
+    'text-muted': '#a0a0a0',
+    'border-main': '#333333',
+    'accent-primary': '#CC79A7', // Reddish Purple (Safe)
   }
 };
 
