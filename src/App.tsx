@@ -11,6 +11,7 @@ import ChatArea from './components/chat/ChatArea';
 import SecurityRecovery from './components/auth/SecurityRecovery';
 import ActiveCall from './components/calls/ActiveCall';
 import SettingsModal from './components/ui/SettingsModal';
+import ThemeManager from './components/ui/ThemeManager';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   constructor(props: { children: ReactNode }) {
@@ -81,7 +82,8 @@ function MainApp() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-discord-dark relative">
+    <div className="flex h-screen overflow-hidden bg-bg-main relative">
+      <ThemeManager />
       <Sidebar />
       <ChannelList />
       <ChatArea />

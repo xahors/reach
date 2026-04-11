@@ -3,6 +3,7 @@ import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Directi
 import { useMatrixClient } from './useMatrixClient';
 
 import { useAppStore } from '../store/useAppStore';
+import { timelineManager } from '../core/timelineManager';
 
 export const useRoomMessages = (roomId: string | null) => {
   const client = useMatrixClient();
@@ -127,6 +128,11 @@ export const useRoomMessages = (roomId: string | null) => {
         type === 'm.call.hangup' ||
         type === 'm.call.reject' ||
         type === 'm.room.member' ||
+        type === 'm.room.name' ||
+        type === 'm.room.topic' ||
+        type === 'm.room.avatar' ||
+        type === 'm.room.power_levels' ||
+        type === 'm.room.canonical_alias' ||
         type === 'org.matrix.msc3401.call' ||
         type === 'm.call.v3' ||
         type === 'm.sticker'
@@ -209,31 +215,43 @@ export const useRoomMessages = (roomId: string | null) => {
     // points at a dead old chunk and must be re-initialized.
     const onTimelineReset = (_room: Room | undefined, _timelineSet: EventTimelineSet, toStartOfTimeline: boolean) => {
       if (toStartOfTimeline) return; // only care about resets at the live end
-      if (!timelineWindow.current) return;
+      if (!timelineWindow.current || !currentRoomRef.current) return;
+      
       const r = currentRoomRef.current;
-      if (!r) return;
-      timelineWindow.current = new TimelineWindow(client, r.getUnfilteredTimelineSet(), { windowLimit: 1000 });
-      timelineWindow.current.load(undefined, 50)
-        .then(() => refreshMessages())
+      // Clear cache for this room as the timeline is dead
+      timelineManager.clearCache(r.roomId);
+      
+      const newWindow = timelineManager.getOrCreateWindow(client, r);
+      timelineWindow.current = newWindow;
+      
+      newWindow.load(undefined, 50)
+        .then(() => {
+          timelineManager.markLoaded(r.roomId);
+          refreshMessages();
+        })
         .catch(console.error);
     };
 
     const initTimeline = async (targetRoom: Room) => {
+      // If we already have a loaded window for this room, just use it
+      if (timelineManager.isLoaded(targetRoom.roomId)) {
+        timelineWindow.current = timelineManager.getOrCreateWindow(client, targetRoom);
+        refreshMessages();
+        return;
+      }
+
       Promise.resolve().then(() => setLoading(true));
 
       lastSentReceiptIdRef.current = null;
       lastReceiptTimeRef.current = 0;
 
-      timelineWindow.current = new TimelineWindow(client, targetRoom.getUnfilteredTimelineSet(), {
-        windowLimit: 1000
-      });
+      const window = timelineManager.getOrCreateWindow(client, targetRoom);
+      timelineWindow.current = window;
 
       try {
         if (messageLoadPolicy === 'latest') {
           // Load from the live end (no event ID = "latest").
-          // TimelineWindow will paginate backward from the server to fill the window.
-          // This is correct even if the local cache is empty or stale.
-          await timelineWindow.current.load(undefined, 100);
+          await window.load(undefined, 100);
         } else {
           const myUserId = client.getUserId();
           const readMarkerIdFromRoom = targetRoom.getAccountData('m.fully_read')?.getContent()?.event_id;
@@ -242,16 +260,17 @@ export const useRoomMessages = (roomId: string | null) => {
           const targetEventId = readMarkerIdFromRoom || readReceiptIdFromRoom;
 
           if (targetEventId) {
-            await timelineWindow.current.load(targetEventId, 100);
+            await window.load(targetEventId, 100);
             // Scroll forward past the read marker so unread messages are visible
-            if (timelineWindow.current.canPaginate(Direction.Forward)) {
-              await timelineWindow.current.paginate(Direction.Forward, 25);
+            if (window.canPaginate(Direction.Forward)) {
+              await window.paginate(Direction.Forward, 25);
             }
           } else {
             // No read marker — fall back to the live end
-            await timelineWindow.current.load(undefined, 100);
+            await window.load(undefined, 100);
           }
         }
+        timelineManager.markLoaded(targetRoom.roomId);
       } catch (error) {
         console.error('Failed to load timeline:', error);
       } finally {
@@ -277,7 +296,8 @@ export const useRoomMessages = (roomId: string | null) => {
       if (currentRoomRef.current) {
         detachListeners(currentRoomRef.current);
       }
-      timelineWindow.current = null;
+      // Do NOT set timelineWindow.current to null here, 
+      // it stays in the timelineManager cache for the session.
     };
   }, [client, roomId, refreshMessages, messageLoadPolicy]);
 

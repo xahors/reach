@@ -206,22 +206,31 @@ class CallManager {
         });
       }
 
-      if (!groupCall || isCallEmpty) {
+      if (!groupCall) {
         // Create a new group call — type Voice vs Video affects SFU/media negotiation
         const callType = type === 'video' ? GroupCallType.Video : GroupCallType.Voice;
-        groupCall = await client.createGroupCall(roomId, callType, false, GroupCallIntent.Prompt);
+        // Use Ring intent to ensure other clients are notified
+        groupCall = await client.createGroupCall(roomId, callType, false, GroupCallIntent.Ring);
         // Sends the m.call state event, notifying other clients a call has started.
-        // If there was an existing inactive call, this overwrites it with a new ID
-        // and triggers a fresh timeline message.
+        await groupCall.create();
+      } else if (isCallEmpty) {
+        // If the call exists but is empty, ensure it's "created" (i.e. state event is active)
+        // This helps if the call was stale or only existed locally.
         await groupCall.create();
       }
 
-      this.currentGroupCall = groupCall;
-      useAppStore.getState().setActiveGroupCall(groupCall);
-      useAppStore.getState().setCameraOff(type === 'voice');
-      this.setupGroupCallListeners(groupCall);
+      // Only setup listeners and enter if this is a new call object or we aren't already tracking it
+      if (this.currentGroupCall !== groupCall) {
+        this.currentGroupCall = groupCall;
+        useAppStore.getState().setActiveGroupCall(groupCall);
+        useAppStore.getState().setCameraOff(type === 'voice');
+        this.setupGroupCallListeners(groupCall);
+      }
       
-      await groupCall.enter();
+      // Only enter if we aren't already in the call
+      if (groupCall.state !== GroupCallState.Entered) {
+        await groupCall.enter();
+      }
       
       if (type === 'voice') {
         await groupCall.setLocalVideoMuted(true);

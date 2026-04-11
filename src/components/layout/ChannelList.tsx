@@ -1,158 +1,377 @@
 import React from 'react';
+import { Room } from 'matrix-js-sdk';
 import { useAppStore } from '../../store/useAppStore';
 import { useSpaceRooms } from '../../hooks/useSpaceRooms';
 import { useDirectMessages } from '../../hooks/useDirectMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { cn } from '../../utils/cn';
-import { ChevronDown, Plus, Settings } from 'lucide-react';
+import { 
+  ChevronDown, Settings, Gamepad2, 
+  MoreVertical, FolderPlus, Trash2, Check, X 
+} from 'lucide-react';
 import { callManager } from '../../core/callManager';
+import { useGamePresence } from '../../hooks/useGamePresence';
 import RoomItem from './RoomItem';
 
 const ChannelList: React.FC = () => {
-  const { activeSpaceId, activeRoomId, setActiveRoomId, setSettingsOpen } = useAppStore();
-  const { rooms, loading: spaceLoading } = useSpaceRooms(activeSpaceId);
+  const { 
+    activeSpaceId, 
+    activeRoomId, 
+    setActiveRoomId,
+    setSettingsOpen, 
+    detectedGame,
+    customGameNames,
+    userPresence,
+    setUserPresence,
+    customStatus,
+    setCustomStatus,
+    roomSections,
+    roomSectionOrder,
+    setRoomSection,
+    addSection,
+    removeSection
+  } = useAppStore();
+  const { rooms } = useSpaceRooms(activeSpaceId);
   const { dms, loading: dmsLoading } = useDirectMessages();
   const client = useMatrixClient();
+  
+  const [showStatusPicker, setShowStatusPicker] = React.useState(false);
+  const [statusInput, setStatusInput] = React.useState(customStatus || '');
+  const statusPickerRef = React.useRef<HTMLDivElement>(null);
+  
+  const [showNewSectionInput, setShowNewSectionPicker] = React.useState(false);
+  const [newSectionName, setNewSectionName] = React.useState('');
+  const [contextMenuRoom, setContextMenuRoom] = React.useState<string | null>(null);
+  const contextMenuRef = React.useRef<HTMLDivElement>(null);
+  
+  // Drag and Drop state
+  const [draggedRoomId, setDraggedRoomId] = React.useState<string | null>(null);
+  const [dragOverSection, setDragOverSection] = React.useState<string | null>(null);
+  
+  useGamePresence();
 
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
-  const lastSelectedSpace = React.useRef<string | null>(null);
-
-  React.useEffect(() => {
-    // If we just entered a space, select the first room if none is active OR if the space changed
-    if (activeSpaceId && !spaceLoading && rooms.length > 0) {
-      if (lastSelectedSpace.current !== activeSpaceId) {
-        const firstRoomId = rooms[0].roomId;
-        lastSelectedSpace.current = activeSpaceId;
-        Promise.resolve().then(() => setActiveRoomId(firstRoomId));
-      }
-    } else if (!activeSpaceId) {
-      lastSelectedSpace.current = null;
-    }
-  }, [activeSpaceId, spaceLoading, rooms, setActiveRoomId]);
 
   const handleRoomClick = (roomId: string) => {
     callManager.warmupAudioContext();
-    setActiveRoomId(roomId);
+    setActiveRoomId?.(roomId);
+  };
+
+  const handleAddSection = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newSectionName.trim()) {
+      addSection(newSectionName.trim());
+      setNewSectionName('');
+      setShowNewSectionPicker(false);
+    }
+  };
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (statusPickerRef.current && !statusPickerRef.current.contains(event.target as Node)) {
+        setShowStatusPicker(false);
+      }
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenuRoom(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleStatusSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomStatus(statusInput || null);
+    setShowStatusPicker(false);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'online': return 'bg-green-500';
+      case 'idle': return 'bg-yellow-500';
+      case 'dnd': return 'bg-red-500';
+      case 'invisible': return 'bg-gray-500';
+      default: return 'bg-green-500';
+    }
+  };
+
+  // Drag and Drop Handlers
+  const onDragStart = (e: React.DragEvent, roomId: string) => {
+    setDraggedRoomId(roomId);
+    e.dataTransfer.setData('roomId', roomId);
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Add a ghost image or styling
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '0.4';
+  };
+
+  const onDragEnd = (e: React.DragEvent) => {
+    setDraggedRoomId(null);
+    setDragOverSection(null);
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '1';
+  };
+
+  const onDragOver = (e: React.DragEvent, sectionName: string) => {
+    e.preventDefault();
+    setDragOverSection(sectionName);
+  };
+
+  const onDrop = (e: React.DragEvent, sectionName: string) => {
+    e.preventDefault();
+    const roomId = e.dataTransfer.getData('roomId');
+    if (roomId) {
+      setRoomSection(roomId, sectionName);
+    }
+    setDragOverSection(null);
+    setDraggedRoomId(null);
+  };
+
+  const renderRoom = (room: Room, isDM = false) => {
+    const isActive = activeRoomId === room.roomId;
+    const isDragged = draggedRoomId === room.roomId;
+    
+    return (
+      <div 
+        key={room.roomId} 
+        draggable={!isDM}
+        onDragStart={(e) => onDragStart(e, room.roomId)}
+        onDragEnd={onDragEnd}
+        className={cn(
+          "relative group/room cursor-grab active:cursor-grabbing",
+          isDragged && "opacity-40"
+        )}
+      >
+        <RoomItem
+          room={room}
+          isActive={isActive}
+          onClick={handleRoomClick}
+        />
+        {!isDM && (
+          <button 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              setContextMenuRoom(contextMenuRoom === room.roomId ? null : room.roomId); 
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 opacity-0 group-hover/room:opacity-100 transition text-text-muted hover:text-white"
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {contextMenuRoom === room.roomId && (
+          <div 
+            ref={contextMenuRef}
+            className="absolute right-8 top-0 w-48 rounded-md bg-bg-sidebar shadow-2xl border border-border-main p-1 z-[100] animate-in fade-in zoom-in duration-150"
+          >
+            <div className="px-2 py-1.5 text-[10px] font-bold uppercase text-text-muted border-b border-border-main mb-1 tracking-wider">Move to Section</div>
+            {roomSectionOrder.map(section => (
+              <button
+                key={section}
+                onClick={() => {
+                  setRoomSection(room.roomId, section);
+                  setContextMenuRoom(null);
+                }}
+                className="flex w-full items-center px-2 py-1.5 rounded text-sm text-text-main hover:bg-accent-primary hover:text-bg-main transition font-bold"
+              >
+                {section}
+                {roomSections[room.roomId] === section && <Check className="ml-auto h-3.5 w-3.5" />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSections = () => {
+    const grouped: Record<string, Room[]> = {};
+    roomSectionOrder.forEach(s => grouped[s] = []);
+    
+    rooms.forEach(room => {
+      const section = roomSections[room.roomId] || 'Channels';
+      if (grouped[section]) {
+        grouped[section].push(room);
+      } else {
+        if (!grouped['Channels']) grouped['Channels'] = [];
+        grouped['Channels'].push(room);
+      }
+    });
+
+    return (
+      <div className="flex-1 overflow-y-auto pt-2 no-scrollbar">
+        {roomSectionOrder.map(section => {
+          const isOver = dragOverSection === section;
+          return (
+            <div 
+              key={section} 
+              className={cn(
+                "mb-4 px-2 transition-all duration-200 rounded-lg mx-1",
+                isOver ? "bg-accent-primary/10 py-2 border border-accent-primary/30" : "border border-transparent"
+              )}
+              onDragOver={(e) => onDragOver(e, section)}
+              onDrop={(e) => onDrop(e, section)}
+            >
+              <div className="flex items-center justify-between px-2 mb-1 group/header">
+                <div className="flex items-center text-[10px] font-bold uppercase text-text-muted hover:text-text-main transition cursor-pointer tracking-wider">
+                  <ChevronDown className="h-3 w-3 mr-0.5" />
+                  <span>{section}</span>
+                </div>
+                <div className="flex items-center space-x-1 opacity-0 group-hover/header:opacity-100 transition">
+                  {section !== 'Channels' && (
+                    <button onClick={() => removeSection(section)} className="p-0.5 hover:text-red-400 transition">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-[2px]">
+                {grouped[section].length === 0 ? (
+                  <div className="px-2 py-2 text-[10px] text-text-muted italic opacity-50 border border-dashed border-border-main rounded">
+                    Drop channels here
+                  </div>
+                ) : (
+                  grouped[section].map(room => renderRoom(room))
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {showNewSectionInput ? (
+          <form onSubmit={handleAddSection} className="px-4 mb-4">
+            <div className="flex items-center space-x-1">
+              <input 
+                autoFocus
+                type="text"
+                value={newSectionName}
+                onChange={(e) => setNewSectionName(e.target.value)}
+                placeholder="New section..."
+                className="flex-1 rounded bg-bg-main p-1.5 text-xs text-text-main outline-none border border-border-main focus:border-accent-primary transition"
+              />
+              <button type="submit" className="p-1.5 rounded bg-accent-primary text-bg-main hover:bg-opacity-90 transition"><Check className="h-3 w-3" /></button>
+              <button type="button" onClick={() => setShowNewSectionPicker(false)} className="p-1.5 rounded bg-bg-hover text-text-muted hover:text-white transition"><X className="h-3 w-3" /></button>
+            </div>
+          </form>
+        ) : (
+          <button 
+            onClick={() => setShowNewSectionPicker(true)}
+            className="mx-4 mb-10 flex items-center text-[10px] font-bold uppercase text-text-muted hover:text-text-main transition tracking-wider"
+          >
+            <FolderPlus className="h-3 w-3 mr-1.5" />
+            <span>Add Section</span>
+          </button>
+        )}
+      </div>
+    );
   };
 
   const renderUserFooter = () => (
-    <div className="flex h-14 items-center bg-[#232428] px-2 py-2 mt-auto">
-      <div className="flex flex-1 items-center rounded px-1 transition hover:bg-discord-hover">
-        <div className="relative h-8 w-8 rounded-full bg-discord-accent flex items-center justify-center text-white font-bold text-sm">
+    <div className="flex h-14 items-center bg-bg-sidebar px-2 py-2 mt-auto relative border-t border-border-main">
+      {showStatusPicker && (
+        <div 
+          ref={statusPickerRef}
+          className="absolute bottom-full left-2 mb-2 w-64 rounded-lg bg-bg-sidebar shadow-2xl border border-border-main p-2 z-50 animate-in slide-in-from-bottom-2 duration-200"
+        >
+          <div className="p-2">
+            <form onSubmit={handleStatusSubmit} className="mb-4">
+              <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block tracking-wider">Custom Status</label>
+              <input 
+                type="text"
+                value={statusInput}
+                onChange={(e) => setStatusInput(e.target.value)}
+                placeholder="What's on your mind?"
+                className="w-full rounded bg-bg-main p-2 text-xs text-text-main outline-none border border-border-main focus:border-accent-primary transition"
+              />
+            </form>
+
+            <div className="space-y-1">
+              {[
+                { id: 'online', label: 'Online', desc: 'You are available', color: 'bg-green-500' },
+                { id: 'idle', label: 'Idle', desc: 'You are away from keys', color: 'bg-yellow-500' },
+                { id: 'dnd', label: 'Do Not Disturb', desc: 'You will not receive notifications', color: 'bg-red-500' },
+                { id: 'invisible', label: 'Invisible', desc: 'Appear offline to everyone', color: 'bg-gray-500' },
+              ].map((status) => (
+                <button
+                  key={status.id}
+                  onClick={() => {
+                    setUserPresence(status.id as 'online' | 'idle' | 'dnd' | 'invisible');
+                    setShowStatusPicker(false);
+                  }}
+                  className="flex w-full items-center p-2 rounded hover:bg-bg-hover transition text-left"
+                >
+                  <div className={`h-3 w-3 rounded-full mr-3 ${status.color}`} />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-white">{status.label}</span>
+                    <span className="text-[10px] text-text-muted">{status.desc}</span>
+                  </div>
+                  {userPresence === status.id && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-accent-primary" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div 
+        onClick={() => setShowStatusPicker(!showStatusPicker)}
+        className="flex flex-1 items-center rounded px-1 transition hover:bg-bg-hover cursor-pointer group"
+      >
+        <div className="relative h-8 w-8 rounded-full bg-accent-primary flex items-center justify-center text-bg-main font-bold text-sm">
            {client?.getUserId()?.charAt(1).toUpperCase()}
-           <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#232428] bg-green-500" />
+           <div className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-bg-sidebar ${getStatusColor(userPresence)}`} />
         </div>
         <div className="ml-2 flex flex-col overflow-hidden">
-          <span className="truncate text-sm font-bold text-white leading-tight">
+          <span className="text-sm font-bold text-text-main leading-tight truncate">
             {client?.getUserId()?.split(':')[0].substring(1)}
           </span>
-          <span className="truncate text-xs text-discord-text-muted leading-tight">
-            Online
+          <span className={cn(
+            "truncate text-[10px] leading-tight flex items-center",
+            detectedGame ? "text-accent-primary font-bold" : "text-text-muted"
+          )}>
+            {detectedGame && userPresence !== 'invisible' ? (
+              <>
+                <Gamepad2 className="mr-1 h-2.5 w-2.5" />
+                Playing {customGameNames[detectedGame] || detectedGame}
+              </>
+            ) : (customStatus || (userPresence.charAt(0).toUpperCase() + userPresence.slice(1)))}
           </span>
         </div>
       </div>
+
       <div className="flex items-center space-x-1">
         <button 
-          onClick={() => { callManager.warmupAudioContext(); setSettingsOpen(true); }}
-          className="rounded p-1 text-discord-text hover:bg-discord-hover hover:text-white transition"
-          title="User Settings"
+          onClick={() => setSettingsOpen(true)}
+          className="p-1.5 rounded-md text-text-muted hover:bg-bg-hover hover:text-text-main transition"
         >
-           <Settings className="h-5 w-5" />
+          <Settings className="h-4 w-4" />
         </button>
       </div>
     </div>
   );
 
-  if (!activeSpaceId) {
-    return (
-      <div className="flex h-full w-60 flex-col bg-discord-sidebar">
-        <div className="flex h-12 items-center px-4 shadow-sm">
-          <h1 className="text-base font-bold text-white">Direct Messages</h1>
-        </div>
-        <div className="flex-1 overflow-y-auto pt-4 no-scrollbar">
-          <div className="mb-2 px-2">
-            <div className="mt-1 space-y-[2px]">
-              {dmsLoading ? (
-                <div className="mx-2 h-10 animate-pulse rounded bg-discord-hover" />
-              ) : dms.length === 0 ? (
-                <p className="px-2 text-xs text-discord-text-muted italic">No direct messages found.</p>
-              ) : (
-                dms.map(({ room, otherUserId }) => {
-                  const otherMember = room.getMember(otherUserId);
-                  const name = otherMember?.name || otherUserId.split(':')[0].substring(1);
-                  let avatarUrl = null;
-                  try {
-                    avatarUrl = otherMember?.getAvatarUrl(client!.getHomeserverUrl(), 32, 32, 'crop', undefined, true);
-                  } catch {
-                    // Ignore avatar fetching errors
-                  }
-
-                  return (
-                    <button
-                      key={room.roomId}
-                      onClick={() => handleRoomClick(room.roomId)}
-                      className={cn(
-                        "group flex w-full items-center rounded px-2 py-1.5 transition",
-                        activeRoomId === room.roomId
-                          ? "bg-discord-hover text-white"
-                          : "text-discord-text-muted hover:bg-discord-hover hover:text-discord-text"
-                      )}
-                    >
-                      <div className="mr-3 h-8 w-8 shrink-0 rounded-full bg-discord-accent flex items-center justify-center text-white font-bold text-xs overflow-hidden">
-                        {avatarUrl ? (
-                          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          name.charAt(0).toUpperCase()
-                        )}
-                      </div>
-                      <span className="truncate text-base font-medium">{name}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-        {renderUserFooter()}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-full w-60 flex-col bg-discord-sidebar">
-      <button className="flex h-12 items-center justify-between px-4 transition hover:bg-discord-hover shadow-sm">
-        <span className="truncate text-base font-bold text-white">
-          {activeSpace?.name || 'Loading Space...'}
+    <div className="flex h-full w-60 flex-col bg-bg-sidebar">
+      <button className="flex h-12 items-center justify-between px-4 transition hover:bg-bg-hover shadow-sm border-b border-border-main">
+        <span className="truncate text-base font-bold text-white tracking-tight uppercase">
+          {activeSpace?.name || (activeSpaceId ? 'Loading Space...' : 'Direct Messages')}
         </span>
-        <ChevronDown className="h-4 w-4 text-discord-text" />
+        <ChevronDown className="h-4 w-4 text-text-muted" />
       </button>
 
-      <div className="flex-1 overflow-y-auto pt-4 no-scrollbar">
-        <div className="mb-2 px-2">
-          <div className="flex items-center justify-between px-2 text-xs font-bold uppercase text-discord-text-muted hover:text-discord-text">
-            <div className="flex items-center">
-              <ChevronDown className="mr-0.5 h-3 w-3" />
-              <span>Text Channels</span>
-            </div>
-            <Plus className="h-4 w-4 cursor-pointer" />
+      {activeSpaceId ? renderSections() : (
+        <div className="flex-1 overflow-y-auto pt-4 no-scrollbar px-2">
+          <div className="px-2 mb-2">
+            <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Direct Messages</span>
           </div>
-
-          <div className="mt-1 space-y-[2px]">
-            {spaceLoading ? (
-              <div className="mx-2 h-8 animate-pulse rounded bg-discord-hover" />
-            ) : (
-              rooms.map((room) => (
-                <RoomItem 
-                  key={room.roomId}
-                  room={room}
-                  isActive={activeRoomId === room.roomId}
-                  onClick={handleRoomClick}
-                />
-              ))
-            )}
+          <div className="space-y-[2px]">
+            {dmsLoading ? (
+              <div className="mx-2 h-10 animate-pulse rounded bg-bg-nav" />
+            ) : dms.map(({ room }) => renderRoom(room, true))}
           </div>
         </div>
-      </div>
+      )}
 
       {renderUserFooter()}
     </div>

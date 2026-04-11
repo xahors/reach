@@ -79,7 +79,7 @@ const ActiveCall: React.FC = () => {
     }
   }, [showSettings]);
 
-  const renderFeed = (feed: CallFeed, className = "", showDetails = true) => {
+  const renderFeed = (feed: CallFeed, className = "") => {
     const feedId = (feed as { feedId?: string }).feedId || `${feed.userId}-${feed.purpose}`;
     return (
       <ParticipantTile 
@@ -87,10 +87,10 @@ const ActiveCall: React.FC = () => {
         feed={feed} 
         isLocal={feed.isLocal()} 
         className={className}
-        showDetails={showDetails}
-        onActivity={(level) => {
+        onActivity={(level: number) => {
           speakerLevels.current[feedId] = level;
         }}
+
       />
     );
   };
@@ -111,7 +111,7 @@ const ActiveCall: React.FC = () => {
         <div className="flex-1 flex overflow-hidden bg-black relative group">
           <div className="flex-1 relative">
             {/* aspect-auto to allow fill */}
-            {renderFeed(mainFeed, "h-full w-full !aspect-auto", true)}
+            {renderFeed(mainFeed, "h-full w-full !aspect-auto")}
           </div>
           {/* Overlay switch if multiple screenshares */}
           {screenshareFeeds.length > 1 && (
@@ -150,7 +150,7 @@ const ActiveCall: React.FC = () => {
             <div className="flex-1 flex flex-row gap-2 overflow-x-auto no-scrollbar h-32 py-1">
               {otherFeeds.map(f => (
                 <div key={(f as { feedId?: string }).feedId || f.userId} className="w-44 shrink-0 cursor-pointer hover:ring-2 hover:ring-discord-accent rounded-lg overflow-hidden transition-all" onClick={() => setPrioritizedFeedId((f as { feedId?: string }).feedId || null)}>
-                  {renderFeed(f, "h-full w-full", false)}
+                  {renderFeed(f, "h-full w-full")}
                 </div>
               ))}
             </div>
@@ -293,7 +293,7 @@ const ActiveCall: React.FC = () => {
           {/* Window Mode Toggles */}
           {callWindowingMode === 'integrated' ? (
             <button 
-              onClick={() => setCallWindowingMode('floating')}
+              onClick={() => setCallWindowingMode('pip')}
               className="p-1 hover:bg-white/10 rounded text-discord-text-muted hover:text-white transition"
               title="Pop out"
             >

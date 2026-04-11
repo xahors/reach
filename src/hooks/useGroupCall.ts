@@ -86,21 +86,26 @@ export const useGroupCall = (roomId: string | null) => {
     const onStateEvent = () => checkGroupCall();
     client.on(RoomStateEvent.Events, onStateEvent);
 
-    // Also track SDK-level state changes on any existing call
-    const sdkGroupCall = client.getGroupCallForRoom(roomId);
-    if (sdkGroupCall) {
-      sdkGroupCall.on(GroupCallEvent.GroupCallStateChanged, checkGroupCall);
-      sdkGroupCall.on(GroupCallEvent.ParticipantsChanged, checkGroupCall);
-    }
-
     return () => {
       client.removeListener(RoomStateEvent.Events, onStateEvent);
-      if (sdkGroupCall) {
-        sdkGroupCall.removeListener(GroupCallEvent.GroupCallStateChanged, checkGroupCall);
-        sdkGroupCall.removeListener(GroupCallEvent.ParticipantsChanged, checkGroupCall);
-      }
     };
   }, [client, roomId, checkGroupCall]);
+
+  // Separate effect for SDK-level call state listeners to prevent leaks during re-renders
+  useEffect(() => {
+    if (!client || !roomId) return;
+    
+    const sdkGroupCall = client.getGroupCallForRoom(roomId);
+    if (!sdkGroupCall) return;
+
+    sdkGroupCall.on(GroupCallEvent.GroupCallStateChanged, checkGroupCall);
+    sdkGroupCall.on(GroupCallEvent.ParticipantsChanged, checkGroupCall);
+
+    return () => {
+      sdkGroupCall.removeListener(GroupCallEvent.GroupCallStateChanged, checkGroupCall);
+      sdkGroupCall.removeListener(GroupCallEvent.ParticipantsChanged, checkGroupCall);
+    };
+  }, [client, roomId, checkGroupCall, groupCall]); // depends on groupCall instance
 
   return { hasGroupCall, participantCount, isCallActive: hasGroupCall, groupCall };
 };

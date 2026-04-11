@@ -1,146 +1,88 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { type CallFeed } from 'matrix-js-sdk/lib/webrtc/callFeed';
-import { MicOff } from 'lucide-react';
-import { callManager } from '../../core/callManager';
+import React, { useEffect, useRef } from 'react';
+import { CallFeed, CallFeedEvent } from 'matrix-js-sdk/lib/webrtc/callFeed';
+import { MicOff, User } from 'lucide-react';
+import { cn } from '../../utils/cn';
 
 interface ParticipantTileProps {
   feed: CallFeed;
   isLocal?: boolean;
-  onActivity?: (level: number) => void;
   className?: string;
+  onActivity?: (level: number) => void;
   showDetails?: boolean;
 }
 
-const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal, onActivity, className = '', showDetails = true }) => {
+const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal = false, className, onActivity }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [level, setLevel] = useState(0);
-  const [isAudioMuted, setIsAudioMuted] = useState(feed.isAudioMuted());
-  const [isVideoMuted, setIsVideoMuted] = useState(feed.isVideoMuted());
-  const requestRef = useRef<number>(0);
-  
-  // Matrix SDK v41 uses 'm.screenshare' or sometimes just 'screenshare' depending on implementation
-  const isScreenshare = feed.purpose === 'm.screenshare';
+  const [isAudioMuted, setIsAudioMuted] = React.useState(feed.isAudioMuted());
+  const [isVideoMuted, setIsVideoMuted] = React.useState(feed.isVideoMuted());
+  const [isSpeaking, setIsSpeaking] = React.useState(false);
 
   useEffect(() => {
-    onActivity?.(level);
-  }, [level, onActivity]);
-
-  useEffect(() => {
-    const stream = feed.stream;
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
-    if (audioRef.current && stream && !isLocal) {
-      audioRef.current.srcObject = stream;
-    }
-
-    const onMuteChange = () => {
+    const onMuteStateChanged = () => {
       setIsAudioMuted(feed.isAudioMuted());
       setIsVideoMuted(feed.isVideoMuted());
     };
 
-    const onStreamChange = () => {
-      if (videoRef.current && feed.stream) {
-        videoRef.current.srcObject = feed.stream;
-      }
+    const onSpeaking = (speaking: boolean) => {
+      setIsSpeaking(speaking);
+      if (onActivity) onActivity(speaking ? 1.0 : 0);
     };
 
-    // @ts-expect-error - internal SDK event name
-    feed.on('mute_state_changed', onMuteChange);
-    // @ts-expect-error - internal SDK event name
-    feed.on('new_stream', onStreamChange);
+    feed.on(CallFeedEvent.MuteStateChanged, onMuteStateChanged);
+    feed.on(CallFeedEvent.Speaking, onSpeaking);
 
-    return () => {
-      // @ts-expect-error - internal SDK event name
-      feed.removeListener('mute_state_changed', onMuteChange);
-      // @ts-expect-error - internal SDK event name
-      feed.removeListener('new_stream', onStreamChange);
-    };
-  }, [feed, isLocal]);
-
-  // Audio Activity Indicator
-  useEffect(() => {
-    if (isAudioMuted || isScreenshare) {
-      Promise.resolve().then(() => setLevel(0));
-      return;
+    // Attach stream to video/audio elements
+    if (videoRef.current && feed.stream) {
+      videoRef.current.srcObject = feed.stream;
     }
-
-    const stream = feed.stream;
-    if (!stream || stream.getAudioTracks().length === 0) return;
-
-    let audioCtx: AudioContext | null = null;
-    let source: MediaStreamAudioSourceNode | null = null;
-    let analyser: AnalyserNode | null = null;
-
-    try {
-      audioCtx = callManager.getContext();
-      if (!audioCtx) return;
-
-      source = audioCtx.createMediaStreamSource(stream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const update = () => {
-        if (!analyser) return;
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        const avg = sum / dataArray.length;
-        setLevel(Math.min(avg / 128, 1));
-        requestRef.current = requestAnimationFrame(update);
-      };
-      update();
-    } catch (e) {
-      console.warn('Audio activity failed', e);
+    if (audioRef.current && feed.stream && !isLocal) {
+      audioRef.current.srcObject = feed.stream;
     }
 
     return () => {
-      cancelAnimationFrame(requestRef.current);
-      source?.disconnect();
-      analyser?.disconnect();
+      feed.removeListener(CallFeedEvent.MuteStateChanged, onMuteStateChanged);
+      feed.removeListener(CallFeedEvent.Speaking, onSpeaking);
     };
-  }, [feed.stream, isAudioMuted, isScreenshare]);
+  }, [feed, isLocal, onActivity]);
 
   return (
-    <div className={`relative flex flex-col items-center justify-center bg-discord-black rounded-lg overflow-hidden border-2 transition-all duration-300 aspect-video ${level > 0.05 ? 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'border-transparent'} ${className}`}>
+    <div className={cn(
+      "relative aspect-video overflow-hidden rounded-xl bg-bg-nav border border-border-main transition-all duration-300",
+      isSpeaking ? "ring-2 ring-accent-primary ring-offset-2 ring-offset-bg-main" : "",
+      className
+    )}>
       {/* Video Element */}
-      {(!isVideoMuted || isScreenshare) ? (
+      {!isVideoMuted ? (
         <video
           ref={videoRef}
           autoPlay
           playsInline
-          muted={isLocal || isScreenshare}
-          className={`w-full h-full ${isScreenshare ? 'object-contain' : 'object-cover'}`}
+          muted={isLocal}
+          className="h-full w-full object-cover mirror-local"
+          style={{ transform: isLocal ? 'scaleX(-1)' : 'none' }}
         />
       ) : (
-        <div className="flex flex-col items-center space-y-4">
-          <div className="h-20 w-20 rounded-full bg-discord-accent flex items-center justify-center text-white text-3xl font-bold shadow-xl">
-            {feed.userId.charAt(1).toUpperCase()}
+        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-nav">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-bg-hover border border-border-main shadow-2xl">
+            <User className="h-10 w-10 text-text-muted" />
           </div>
-          {showDetails && <span className="text-discord-text-muted font-bold text-sm uppercase tracking-widest">{feed.userId}</span>}
+          <span className="mt-4 text-xs font-black uppercase tracking-widest text-text-muted">
+            {feed.userId.split(':')[0].substring(1)} {isLocal ? '(You)' : ''}
+          </span>
         </div>
       )}
 
-      {/* Audio element for remote feeds */}
-      {!isLocal && !isScreenshare && <audio ref={audioRef} autoPlay />}
+      {/* Audio element for remote participants */}
+      {!isLocal && <audio ref={audioRef} autoPlay />}
 
-      {/* Overlays */}
-      {showDetails && (
-        <>
-          <div className="absolute bottom-2 left-2 flex items-center space-x-2 rounded-md bg-black/40 backdrop-blur-sm px-2 py-1 text-[10px] text-white max-w-[90%]">
-            <span className="font-bold truncate">{isLocal ? 'You' : feed.userId.split(':')[0].substring(1)}</span>
-            {isScreenshare && <span className="text-[10px] bg-discord-accent px-1 rounded uppercase font-black">Screen</span>}
-            {isAudioMuted && !isScreenshare && <MicOff className="h-3 w-3 text-red-500" />}
-          </div>
-
-          {level > 0.05 && (
-            <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,1)]" />
-          )}
-        </>
-      )}
+      {/* Overlay info */}
+      <div className="absolute bottom-2 left-2 flex items-center space-x-2 rounded-lg bg-black/40 px-2 py-1 backdrop-blur-md border border-white/5">
+        <span className="text-[10px] font-bold text-white tracking-tighter uppercase">
+          {feed.userId.split(':')[0].substring(1)}
+        </span>
+        {isAudioMuted && <MicOff className="h-3 w-3 text-red-500" />}
+      </div>
     </div>
   );
 };

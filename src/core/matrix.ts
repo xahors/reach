@@ -2,6 +2,10 @@ import * as sdk from 'matrix-js-sdk';
 import Olm from '@matrix-org/olm';
 import * as RustSdkCryptoJs from '@matrix-org/matrix-sdk-crypto-wasm';
 import { type CryptoApi } from 'matrix-js-sdk/lib/crypto-api';
+import { decodeRecoveryKey } from 'matrix-js-sdk/lib/crypto-api/recovery-key';
+import { deriveRecoveryKeyFromPassphrase } from 'matrix-js-sdk/lib/crypto-api/key-passphrase';
+import { useAppStore } from '../store/useAppStore';
+import { timelineManager } from './timelineManager';
 
 declare global {
   interface Window {
@@ -58,48 +62,42 @@ class MatrixService {
       useAuthorizationHeader: true,
       timelineSupport: true,
       cryptoCallbacks: {
-        getSecretStorageKey: async ({ keys }) => {
+        getSecretStorageKey: async ({ keys }, name) => {
           if (!this.tempRecoveryKey) return null;
           const rawInput = this.tempRecoveryKey.trim();
-          const keyId = Object.keys(keys)[0];
-          const keyInfo = keys[keyId];
           
-          console.log(`SDK requested secret key for ID: ${keyId}`);
+          console.log(`SDK requested secret key for "${name}". Available IDs: ${Object.keys(keys).join(', ')}`);
 
-          // 1. Always try decodeRecoveryKey first — it validates the checksum,
-          //    so if it succeeds we know this is a valid Security Key regardless
-          //    of what character it starts with. The old startsWith('E') heuristic
-          //    was too loose and caused bad-MAC errors when a passphrase happened
-          //    to start with 'E'.
-          try {
-            const { decodeRecoveryKey } = await import("matrix-js-sdk/lib/crypto-api/recovery-key.js");
-            const decoded = decodeRecoveryKey(rawInput);
-            console.log("Providing decoded Recovery Key bytes to SDK.");
-            return [keyId, decoded];
-          } catch {
-            // Not a valid Security Key — fall through to passphrase derivation
-          }
-
-          // 2. If keyInfo has passphrase data, derive the key using the SDK helper
-          if (keyInfo.passphrase) {
+          for (const [keyId, keyInfo] of Object.entries(keys)) {
+            // 1. Always try decodeRecoveryKey first — it validates the checksum
             try {
-              const { deriveRecoveryKeyFromPassphrase } = await import("matrix-js-sdk/lib/crypto-api/index.js");
-              console.log("Deriving key from Security Phrase...");
-              const derivedKey = await deriveRecoveryKeyFromPassphrase(
-                rawInput,
-                keyInfo.passphrase.salt,
-                keyInfo.passphrase.iterations
-              );
-              console.log("Providing derived passphrase key to SDK.");
-              return [keyId, derivedKey];
-            } catch (e) {
-              console.error("Failed to derive key from passphrase:", e);
+              const decoded = decodeRecoveryKey(rawInput);
+              console.log(`Successfully decoded input as Recovery Key for ID: ${keyId}`);
+              return [keyId, decoded];
+            } catch {
+              // Not a valid Security Key
+            }
+
+            // 2. If keyInfo has passphrase data, derive the key using the SDK helper
+            if (keyInfo.passphrase) {
+              try {
+                console.log(`Deriving key from Security Phrase for ID: ${keyId}...`);
+                const derivedKey = await deriveRecoveryKeyFromPassphrase(
+                  rawInput,
+                  keyInfo.passphrase.salt,
+                  keyInfo.passphrase.iterations
+                );
+                console.log(`Successfully derived passphrase key for ID: ${keyId}`);
+                return [keyId, derivedKey];
+              } catch (e) {
+                console.error(`Failed to derive key from passphrase for ID ${keyId}:`, e);
+              }
             }
           }
 
           // 3. Fallback: raw bytes (rarely useful, but kept as last resort)
-          console.log("Providing raw bytes to SDK (fallback).");
-          return [keyId, new TextEncoder().encode(rawInput)];
+          console.warn("Could not decode as recovery key or derive from passphrase. Falling back to raw bytes.");
+          return [Object.keys(keys)[0], new TextEncoder().encode(rawInput)];
         }
       }
     });
@@ -181,10 +179,22 @@ class MatrixService {
   }
 
   async loginWithStoredToken(): Promise<sdk.MatrixClient | null> {
-    if (this.isInitializing) {
-      console.warn("Matrix initialization already in progress, skipping...");
+    if (this.client) {
+      console.log("Matrix client already exists, skipping initialization.");
       return this.client;
     }
+
+    if (this.isInitializing) {
+      console.log("Matrix initialization already in progress, waiting...");
+      // Poll briefly to see if it completes (standard simple way to handle race)
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        if (this.client) return this.client;
+        if (!this.isInitializing) break;
+      }
+      if (this.client) return this.client;
+    }
+
     
     const accessToken = localStorage.getItem('matrix_access_token');
     const userId = localStorage.getItem('matrix_user_id');
@@ -256,7 +266,10 @@ class MatrixService {
             useIndexedDB: true,
             cryptoDatabasePrefix: `matrix-sdk-crypto-${this.client.getDeviceId()}`
           });
-          console.log("Rust crypto initialized successfully.");
+          // Initialize the crypto engine. We don't do a "quiet bootstrap" of cross-signing 
+          // here because that requires the recovery key which isn't stored in memory 
+          // across refreshes. The UI (SecurityRecovery) will handle prompting if 
+          // keys are actually missing from the local database.
         } catch (err) {
           console.error("Rust crypto initialization failed:", err);
         }
@@ -292,19 +305,59 @@ class MatrixService {
       }
     });
 
+    const syncFilter = new sdk.Filter(this.client.getUserId()!, 'reach_sync_filter');
+    syncFilter.setDefinition({
+      room: {
+        timeline: { limit: 50 },
+        state: { lazy_load_members: true }
+      }
+    });
+
     await this.client.startClient({ 
       initialSyncLimit: 50,
       lazyLoadMembers: true,
       // pollTimeout: 20000 ensures sync loop completes before most proxy timeouts (usually 30s)
       pollTimeout: 20000,
+      filter: syncFilter,
     });
+    
     console.log("Matrix client started.");
+    await this.syncPresenceWithStore();
+  }
+
+  async setPresence(presence: "online" | "offline" | "unavailable", statusMsg?: string) {
+    if (!this.client) return;
+    try {
+      await this.client.setPresence({
+        presence,
+        status_msg: statusMsg
+      });
+    } catch (e) {
+      console.error("Failed to set presence:", e);
+    }
+  }
+
+  async syncPresenceWithStore() {
+    const { userPresence, customStatus, detectedGame, customGameNames } = useAppStore.getState();
+    
+    // Map UI states to Matrix protocol states
+    let matrixPresence: "online" | "unavailable" | "offline" = "online";
+    if (userPresence === 'idle') matrixPresence = "unavailable";
+    if (userPresence === 'invisible') matrixPresence = "offline";
+    
+    // Use detected game as status if available and user is not invisible
+    let statusMsg = customStatus || undefined;
+    
+    if (userPresence !== 'invisible' && detectedGame) {
+      const displayName = customGameNames[detectedGame] || detectedGame;
+      statusMsg = `Playing ${displayName}`;
+    }
+
+    await this.setPresence(matrixPresence, statusMsg);
   }
 
   stop(isPermanent = false) {
-    if (isPermanent) {
-      this.isInitializing = false;
-    }
+    this.isInitializing = false;
     
     if (this.client) {
       console.log(`Stopping Matrix client (permanent: ${isPermanent})...`);
@@ -330,6 +383,7 @@ class MatrixService {
 
   logout() {
     this.stop(true);
+    timelineManager.clearCache();
     
     // Clear tokens and stored state
     localStorage.removeItem('matrix_access_token');
