@@ -71,7 +71,7 @@ export const THEME_PRESETS: Record<Exclude<ThemeConfig['activePreset'], 'custom'
     'text-main': '#ffffff',
     'text-muted': '#a0a0a0',
     'border-main': '#333333',
-    'accent-primary': '#0072B2', // Sky Blue (Safe)
+    'accent-primary': '#0072B2',
   },
   deuteranopia: {
     'bg-main': '#000000',
@@ -81,7 +81,7 @@ export const THEME_PRESETS: Record<Exclude<ThemeConfig['activePreset'], 'custom'
     'text-main': '#ffffff',
     'text-muted': '#a0a0a0',
     'border-main': '#333333',
-    'accent-primary': '#E69F00', // Orange (Safe)
+    'accent-primary': '#E69F00',
   },
   tritanopia: {
     'bg-main': '#000000',
@@ -91,7 +91,7 @@ export const THEME_PRESETS: Record<Exclude<ThemeConfig['activePreset'], 'custom'
     'text-main': '#ffffff',
     'text-muted': '#a0a0a0',
     'border-main': '#333333',
-    'accent-primary': '#CC79A7', // Reddish Purple (Safe)
+    'accent-primary': '#CC79A7',
   }
 };
 
@@ -124,7 +124,7 @@ interface AppState {
   userPresence: 'online' | 'idle' | 'dnd' | 'invisible';
   customStatus: string | null;
   roomSections: Record<string, string>; // roomId -> sectionName
-  roomSectionOrder: string[]; // list of section names
+  roomSectionOrder: Record<string, string[]>; // spaceId -> list of section names
   themeConfig: ThemeConfig;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
@@ -152,8 +152,8 @@ interface AppState {
   setUserPresence: (presence: 'online' | 'idle' | 'dnd' | 'invisible') => void;
   setCustomStatus: (status: string | null) => void;
   setRoomSection: (roomId: string, sectionName: string) => void;
-  addSection: (sectionName: string) => void;
-  removeSection: (sectionName: string) => void;
+  addSection: (spaceId: string, sectionName: string) => void;
+  removeSection: (spaceId: string, sectionName: string) => void;
   setThemeConfig: (config: Partial<ThemeConfig>) => void;
 }
 
@@ -188,7 +188,7 @@ export const useAppStore = create<AppState>()(
       userPresence: 'online',
       customStatus: null,
       roomSections: {},
-      roomSectionOrder: ['Channels'],
+      roomSectionOrder: {},
       themeConfig: {
         activePreset: 'oled',
         colors: THEME_PRESETS.oled,
@@ -250,17 +250,26 @@ export const useAppStore = create<AppState>()(
       setRoomSection: (roomId, sectionName) => set((state) => ({
         roomSections: { ...state.roomSections, [roomId]: sectionName }
       })),
-      addSection: (sectionName) => set((state) => ({
-        roomSectionOrder: state.roomSectionOrder.includes(sectionName) 
-          ? state.roomSectionOrder 
-          : [...state.roomSectionOrder, sectionName]
-      })),
-      removeSection: (sectionName) => set((state) => ({
-        roomSectionOrder: state.roomSectionOrder.filter(s => s !== sectionName),
-        roomSections: Object.fromEntries(
-          Object.entries(state.roomSections).filter(([, s]) => s !== sectionName)
-        )
-      })),
+      addSection: (spaceId, sectionName) => set((state) => {
+        const currentSections = state.roomSectionOrder[spaceId] || ['Channels'];
+        if (currentSections.includes(sectionName)) return state;
+        return {
+          roomSectionOrder: {
+            ...state.roomSectionOrder,
+            [spaceId]: [...currentSections, sectionName]
+          }
+        };
+      }),
+      removeSection: (spaceId, sectionName) => set((state) => {
+        const currentSections = state.roomSectionOrder[spaceId] || ['Channels'];
+        return {
+          roomSectionOrder: {
+            ...state.roomSectionOrder,
+            [spaceId]: currentSections.filter(s => s !== sectionName)
+          },
+          // Note: Rooms will fallback to 'Channels' automatically if their section is missing
+        };
+      }),
       setThemeConfig: (config) => set((state) => ({
         themeConfig: { ...state.themeConfig, ...config }
       })),

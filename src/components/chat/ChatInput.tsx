@@ -22,7 +22,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
 
   useEffect(() => {
     if (editingEvent) {
-      // Use setTimeout to avoid synchronous setState during render cycle
       const timer = setTimeout(() => {
         setMessage(editingEvent.getContent().body || '');
         inputRef.current?.focus();
@@ -40,7 +39,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     if (editingEvent) {
       const originalBody = editingEvent.getContent().body;
       if (message.trim() !== originalBody) {
-        client.sendMessage(roomId, {
+        // cast to any is necessary due to complex matrix-js-sdk types for message content
+        const content = {
           "m.new_content": {
             "msgtype": MsgType.Text,
             "body": message
@@ -51,11 +51,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           },
           "msgtype": MsgType.Text,
           "body": ` * ${message}`
-        } as any);
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        client.sendMessage(roomId, content as any);
       }
       setEditingEvent(null);
     } else {
-      const content: any = {
+      const content: Record<string, unknown> = {
         msgtype: MsgType.Text,
         body: message,
       };
@@ -69,7 +71,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         setReplyingToEvent(null);
       }
 
-      client.sendMessage(roomId, content);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      client.sendMessage(roomId, content as any);
     }
     
     setMessage('');
@@ -84,7 +87,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const handleStickerClick = useCallback((sticker: Sticker) => {
     if (!client) return;
     
-    client.sendMessage(roomId, {
+    const content = {
       msgtype: 'm.sticker',
       body: sticker.body,
       url: sticker.url,
@@ -94,7 +97,9 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         mimetype: sticker.info?.mimetype,
         size: sticker.info?.size,
       }
-    } as any);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client.sendMessage(roomId, content as any);
     setShowStickerPicker(false);
   }, [client, roomId]);
 

@@ -51,6 +51,7 @@ const ChannelList: React.FC = () => {
   useGamePresence();
 
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
+  const currentSpaceSections = (activeSpaceId && roomSectionOrder[activeSpaceId]) || ['Channels'];
 
   const handleRoomClick = (roomId: string) => {
     callManager.warmupAudioContext();
@@ -59,8 +60,8 @@ const ChannelList: React.FC = () => {
 
   const handleAddSection = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newSectionName.trim()) {
-      addSection(newSectionName.trim());
+    if (newSectionName.trim() && activeSpaceId) {
+      addSection(activeSpaceId, newSectionName.trim());
       setNewSectionName('');
       setShowNewSectionPicker(false);
     }
@@ -166,7 +167,7 @@ const ChannelList: React.FC = () => {
             className="absolute right-8 top-0 w-48 rounded-md bg-bg-sidebar shadow-2xl border border-border-main p-1 z-[100] animate-in fade-in zoom-in duration-150"
           >
             <div className="px-2 py-1.5 text-[10px] font-bold uppercase text-text-muted border-b border-border-main mb-1 tracking-wider">Move to Section</div>
-            {roomSectionOrder.map(section => (
+            {currentSpaceSections.map(section => (
               <button
                 key={section}
                 onClick={() => {
@@ -187,7 +188,7 @@ const ChannelList: React.FC = () => {
 
   const renderSections = () => {
     const grouped: Record<string, Room[]> = {};
-    roomSectionOrder.forEach(s => grouped[s] = []);
+    currentSpaceSections.forEach(s => grouped[s] = []);
     
     rooms.forEach(room => {
       const section = roomSections[room.roomId] || 'Channels';
@@ -201,7 +202,7 @@ const ChannelList: React.FC = () => {
 
     return (
       <div className="flex-1 overflow-y-auto pt-2 no-scrollbar">
-        {roomSectionOrder.map(section => {
+        {currentSpaceSections.map(section => {
           const isOver = dragOverSection === section;
           return (
             <div 
@@ -219,8 +220,8 @@ const ChannelList: React.FC = () => {
                   <span>{section}</span>
                 </div>
                 <div className="flex items-center space-x-1 opacity-0 group-hover/header:opacity-100 transition">
-                  {section !== 'Channels' && (
-                    <button onClick={() => removeSection(section)} className="p-0.5 hover:text-red-400 transition">
+                  {section !== 'Channels' && activeSpaceId && (
+                    <button onClick={() => removeSection(activeSpaceId, section)} className="p-0.5 hover:text-red-400 transition">
                       <Trash2 className="h-3 w-3" />
                     </button>
                   )}
