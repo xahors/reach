@@ -72,7 +72,7 @@ const ChatArea: React.FC = () => {
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
-  const { messages, loading, paginate, canPaginate, markAsRead, readMarkerId, jumpToEvent } = useRoomMessages(roomId);
+  const { messages, loading, paginate, canPaginate, canPaginateForward, markAsRead, readMarkerId, jumpToEvent, jumpToLive } = useRoomMessages(roomId);
   const { hasGroupCall, participantCount, isCallActive } = useGroupCall(roomId);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
@@ -248,8 +248,10 @@ const ChatArea: React.FC = () => {
                 loading={loading} 
                 onPaginate={paginate}
                 canPaginate={canPaginate}
+                canPaginateForward={canPaginateForward}
                 onScrollBottom={markAsRead}
                 onJumpToEvent={jumpToEvent}
+                onJumpToLive={jumpToLive}
                 readMarkerId={readMarkerId || undefined}
               />
 

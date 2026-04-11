@@ -3,7 +3,6 @@ import { MatrixEvent, EventStatus } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
 import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings } from 'lucide-react';
-import { callManager } from '../../core/callManager';
 import { cn } from '../../utils/cn';
 import { UrlPreview } from './UrlPreview';
 
@@ -26,6 +25,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
   const fullDate = new Date(event.getTs()).toLocaleString();
 
   const type = event.getType();
+  const content = event.getContent();
 
   const isStateEvent = type === 'm.room.member' || 
                        type === 'm.room.name' || 
@@ -34,24 +34,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
                        type === 'm.room.power_levels' ||
                        type === 'm.room.canonical_alias';
 
-  const isCallEvent = type === 'm.call.v3' || 
-                      type === 'm.call.invite' || 
+  const isCallEvent = type === 'm.call.invite' || 
                       type === 'm.call.hangup' || 
                       type === 'm.call.reject' || 
-                      type === 'm.call.answer' ||
-                      type === 'org.matrix.msc3401.call';
-
-  const handleJoinCall = () => {
-    const roomId = event.getRoomId();
-    if (roomId) {
-      callManager.enterGroupCall(roomId, 'video');
-    }
-  };
+                      type === 'm.call.answer';
 
   if (isStateEvent && !isRedacted) {
     let icon = <Settings className="h-3 w-3 text-text-muted" />;
     let text = '';
-    const content = event.getContent();
     const prevContent = event.getPrevContent();
     const senderName = sender?.name || event.getSender() || 'Someone';
 
@@ -113,7 +103,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
   if (isCallEvent && !isRedacted) {
     let callIcon = <Video className="h-5 w-5 text-green-500" />;
     let callText = 'Started a video call';
-    let showJoin = false;
 
     if (type === 'm.call.invite') {
        callText = 'Started a private call';
@@ -123,9 +112,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
        callText = type === 'm.call.reject' ? 'Declined the call' : 'Ended the call';
     } else if (type === 'm.call.answer') {
        callText = 'Answered the call';
-    } else if (type === 'org.matrix.msc3401.call' || type === 'm.call.v3') {
-       callText = 'Group call active';
-       showJoin = true;
     }
 
     return (
@@ -142,20 +128,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
             {sender?.name || event.getSender()}
           </div>
         </div>
-        {showJoin && (
-          <button 
-            onClick={handleJoinCall}
-            className="ml-4 flex items-center space-x-2 rounded bg-green-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-green-700 shadow-lg shadow-green-900/20 uppercase tracking-widest"
-          >
-            <Video className="h-3 w-3" />
-            <span>JOIN</span>
-          </button>
-        )}
       </div>
     );
   }
 
-  const content = event.getContent();
   const body = isRedacted ? 'This message was deleted.' : content.body;
   
   let media = null;

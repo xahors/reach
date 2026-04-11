@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
-import { Hash, ChevronUp, Loader2 } from 'lucide-react';
+import { Hash, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 
 interface MessageListProps {
   roomId: string;
@@ -10,8 +10,10 @@ interface MessageListProps {
   loading?: boolean;
   onPaginate?: () => void;
   canPaginate?: boolean;
+  canPaginateForward?: boolean;
   onScrollBottom?: () => void;
   onJumpToEvent?: (id: string) => void;
+  onJumpToLive?: () => void;
   readMarkerId?: string;
 }
 
@@ -21,8 +23,10 @@ const MessageList: React.FC<MessageListProps> = ({
   loading, 
   onPaginate, 
   canPaginate, 
+  canPaginateForward,
   onScrollBottom,
   onJumpToEvent,
+  onJumpToLive,
   readMarkerId
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -156,6 +160,18 @@ const MessageList: React.FC<MessageListProps> = ({
             )}
           </React.Fragment>
         ))}
+
+        {(!shouldScrollToBottom || canPaginateForward) && !loading && (
+          <div className="sticky bottom-4 flex justify-center py-4 z-10 pointer-events-none">
+            <button 
+              onClick={canPaginateForward ? onJumpToLive : scrollToBottom}
+              className="flex items-center space-x-2 rounded-full border border-border-main bg-bg-nav px-4 py-1.5 text-[10px] font-black text-text-muted transition hover:bg-bg-hover hover:text-white uppercase tracking-tighter pointer-events-auto shadow-lg shadow-black/50"
+            >
+              <span>Jump to Present</span>
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
