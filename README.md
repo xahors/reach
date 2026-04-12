@@ -3,8 +3,7 @@
 > [!WARNING]
 > Work in Progress: Reach is currently in active development. Expect frequent updates and potential breaking changes. Also this is basically vibe coded, fork at your own risk.
 
-<img width="1379" height="767" alt="image" src="https://github.com/user-attachments/assets/746947f4-221c-45c4-8136-2f2748bd8fb4" />
-
+<img width="1260" height="776" alt="image" src="https://github.com/user-attachments/assets/4b44b453-f690-4368-8c09-f60b497dfa26" />
 
 Reach is a Discord-like chat client built on the Matrix Protocol.
 

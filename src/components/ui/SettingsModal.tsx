@@ -134,7 +134,7 @@ const SettingsModal: React.FC = () => {
         <nav className="flex-1 space-y-0.5">
           <button 
             onClick={() => setActiveTab('appearance')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'appearance' ? 'bg-bg-hover text-white' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'appearance' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
           >
             <Palette className={`mr-2 h-4 w-4 ${activeTab === 'appearance' ? 'text-accent-primary' : ''}`} /> 
             <span className="text-sm font-medium">Appearance</span>
@@ -142,7 +142,7 @@ const SettingsModal: React.FC = () => {
 
           <button 
             onClick={() => setActiveTab('security')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'security' ? 'bg-bg-hover text-white' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'security' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
           >
             <Shield className={`mr-2 h-4 w-4 ${activeTab === 'security' ? 'text-accent-primary' : ''}`} /> 
             <span className="text-sm font-medium">Security & Privacy</span>
@@ -150,7 +150,7 @@ const SettingsModal: React.FC = () => {
 
           <button 
             onClick={() => setActiveTab('notifications')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'notifications' ? 'bg-bg-hover text-white' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'notifications' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
           >
             <Bell className={`mr-2 h-4 w-4 ${activeTab === 'notifications' ? 'text-accent-primary' : ''}`} /> 
             <span className="text-sm font-medium">Notifications</span>
@@ -158,7 +158,7 @@ const SettingsModal: React.FC = () => {
 
           <button 
             onClick={() => setActiveTab('sessions')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'sessions' ? 'bg-bg-hover text-white' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'sessions' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
           >
             <Monitor className={`mr-2 h-4 w-4 ${activeTab === 'sessions' ? 'text-accent-primary' : ''}`} /> 
             <span className="text-sm font-medium">Active Sessions</span>
@@ -166,7 +166,7 @@ const SettingsModal: React.FC = () => {
 
           <button 
             onClick={() => setActiveTab('activity')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'activity' ? 'bg-bg-hover text-white' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'activity' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
           >
             <Gamepad2 className={`mr-2 h-4 w-4 ${activeTab === 'activity' ? 'text-accent-primary' : ''}`} /> 
             <span className="text-sm font-medium">Registered Games</span>
@@ -189,7 +189,7 @@ const SettingsModal: React.FC = () => {
         <div className="absolute top-12 right-12">
           <button 
             onClick={() => setSettingsOpen(false)}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-border-main text-text-muted transition hover:bg-bg-hover hover:text-white"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-border-main text-text-muted transition hover:bg-bg-hover hover:text-text-main"
           >
             <X className="h-6 w-6" />
           </button>
@@ -200,12 +200,12 @@ const SettingsModal: React.FC = () => {
           
           {activeTab === 'appearance' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 pb-20">
-              <h1 className="mb-8 text-2xl font-bold text-white tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Appearance</h1>
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Appearance</h1>
               
               <section className="mb-12">
                 <div className="mb-6 flex items-center">
                   <Palette className="mr-2 h-5 w-5 text-accent-primary" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Themes</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Themes</h2>
                 </div>
                 
                 <div className="space-y-8">
@@ -225,7 +225,7 @@ const SettingsModal: React.FC = () => {
                             }`}
                           >
                             <div className="flex flex-col space-y-2">
-                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-white' : 'text-text-muted'}`}>
+                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-text-main' : 'text-text-muted'}`}>
                                 {preset}
                               </span>
                               <div className="flex space-x-1">
@@ -259,7 +259,7 @@ const SettingsModal: React.FC = () => {
                             }`}
                           >
                             <div className="flex flex-col space-y-2">
-                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-white' : 'text-text-muted'}`}>
+                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-text-main' : 'text-text-muted'}`}>
                                 {preset}
                               </span>
                               <div className="flex space-x-1">
@@ -281,12 +281,12 @@ const SettingsModal: React.FC = () => {
               <section className="mb-12">
                 <div className="mb-6 flex items-center">
                   <MessageSquare className="mr-2 h-5 w-5 text-accent-primary" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Chat Features</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Chat Features</h2>
                 </div>
                 <div className="space-y-3 max-w-2xl">
                   <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
                     <div>
-                      <p className="text-sm font-bold text-white uppercase tracking-tight">URL Previews</p>
+                      <p className="text-sm font-bold text-text-main uppercase tracking-tight">URL Previews</p>
                       <p className="text-[10px] text-text-muted uppercase tracking-tighter">Show secure previews when hovering over links</p>
                     </div>
                     <div 
@@ -302,7 +302,7 @@ const SettingsModal: React.FC = () => {
               <section className="mb-12">
                 <div className="mb-6 flex items-center">
                   <Edit2 className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Advanced Customization</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Advanced Customization</h2>
                 </div>
                 
                 <div className="rounded-xl border border-border-main bg-bg-nav/30 p-6 space-y-6">
@@ -319,7 +319,7 @@ const SettingsModal: React.FC = () => {
                             type="text"
                             value={themeConfig.colors[colorKey]}
                             onChange={(e) => handleColorChange(colorKey, e.target.value)}
-                            className="flex-1 rounded bg-bg-main px-3 py-1.5 text-xs font-mono text-white outline-none border border-border-main focus:border-accent-primary transition"
+                            className="flex-1 rounded bg-bg-main px-3 py-1.5 text-xs font-mono text-text-main outline-none border border-border-main focus:border-accent-primary transition"
                           />
                         </div>
                       </div>
@@ -331,14 +331,14 @@ const SettingsModal: React.FC = () => {
               <section>
                 <div className="mb-6 flex items-center">
                   <Code className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Custom CSS</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Custom CSS</h2>
                 </div>
                 <div className="rounded-xl border border-border-main bg-bg-nav p-4">
                   <textarea
                     value={themeConfig.customCSS}
                     onChange={(e) => setThemeConfig({ customCSS: e.target.value })}
                     placeholder="/* Add your custom styles here */\n.message-item {\n  border-left: 2px solid var(--accent-primary);\n}"
-                    className="h-40 w-full resize-none bg-transparent font-mono text-xs text-white outline-none placeholder:text-text-muted/30"
+                    className="h-40 w-full resize-none bg-transparent font-mono text-xs text-text-main outline-none placeholder:text-text-muted/30"
                   />
                 </div>
                 <p className="mt-2 text-[10px] text-text-muted italic">Advanced: These styles are injected directly into the application head.</p>
@@ -348,12 +348,12 @@ const SettingsModal: React.FC = () => {
 
           {activeTab === 'security' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <h1 className="mb-8 text-2xl font-bold text-white tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Security & Privacy</h1>
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Security & Privacy</h1>
               
               <section className="mb-10">
                 <div className="mb-4 flex items-center">
                   <Lock className="mr-2 h-5 w-5 text-accent-primary" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Session Recovery</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Session Recovery</h2>
                 </div>
                 <p className="mb-6 text-sm text-text-muted leading-relaxed">
                   Enter your Security Key to verify this session and restore access to encrypted messages.
@@ -367,7 +367,7 @@ const SettingsModal: React.FC = () => {
                       value={recoveryKey}
                       onChange={(e) => setRecoveryKey(e.target.value)}
                       placeholder="e.g. EsT2 1234 ..."
-                      className="w-full rounded bg-bg-main px-4 py-3 text-sm font-mono text-white outline-none border border-border-main focus:border-accent-primary transition"
+                      className="w-full rounded bg-bg-main px-4 py-3 text-sm font-mono text-text-main outline-none border border-border-main focus:border-accent-primary transition"
                     />
                   </div>
                   <button 
@@ -387,12 +387,12 @@ const SettingsModal: React.FC = () => {
               <section>
                 <div className="mb-4 flex items-center">
                   <Shield className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Privacy Settings</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Privacy Settings</h2>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
                     <div>
-                      <p className="text-sm font-bold text-white">Direct Message Encryption</p>
+                      <p className="text-sm font-bold text-text-main">Direct Message Encryption</p>
                       <p className="text-xs text-text-muted">Always encrypt DMs with new participants</p>
                     </div>
                     <div className="h-5 w-10 rounded-full bg-accent-primary p-1 cursor-pointer">
@@ -406,7 +406,7 @@ const SettingsModal: React.FC = () => {
 
           {activeTab === 'notifications' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <h1 className="mb-8 text-2xl font-bold text-white tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Notifications</h1>
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Notifications</h1>
               
               <div className="space-y-8">
                 <section>
@@ -419,7 +419,7 @@ const SettingsModal: React.FC = () => {
                     ].map(item => (
                       <div key={item.key} className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
                         <div>
-                          <p className="text-sm font-bold text-white">{item.label}</p>
+                          <p className="text-sm font-bold text-text-main">{item.label}</p>
                           <p className="text-xs text-text-muted">{item.desc}</p>
                         </div>
                         <div 
@@ -438,7 +438,7 @@ const SettingsModal: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
                       <div>
-                        <p className="text-sm font-bold text-white">Suppress @everyone</p>
+                        <p className="text-sm font-bold text-text-main">Suppress @everyone</p>
                         <p className="text-xs text-text-muted">Don't notify for broad mentions</p>
                       </div>
                       <div className="h-5 w-10 rounded-full bg-bg-hover p-1 cursor-not-allowed">
@@ -454,7 +454,7 @@ const SettingsModal: React.FC = () => {
           {activeTab === 'sessions' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex items-baseline justify-between mb-8">
-                <h1 className="text-2xl font-bold text-white tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Active Sessions</h1>
+                <h1 className="text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Active Sessions</h1>
                 <span className="text-[10px] font-mono text-text-muted bg-bg-hover px-2 py-1 rounded">DEVICE_ID: {client?.getDeviceId()}</span>
               </div>
 
@@ -470,7 +470,7 @@ const SettingsModal: React.FC = () => {
                         <div className="mr-3 flex h-8 w-8 items-center justify-center rounded-full bg-accent-primary text-bg-main">
                           <CheckCircle2 className="h-5 w-5" />
                         </div>
-                        <h2 className="font-black text-white uppercase tracking-tighter text-lg">Current Session</h2>
+                        <h2 className="font-black text-text-main uppercase tracking-tighter text-lg">Current Session</h2>
                       </div>
                       <span className="rounded bg-accent-primary px-2 py-0.5 text-[10px] font-black text-bg-main uppercase tracking-widest">Active Now</span>
                     </div>
@@ -482,11 +482,11 @@ const SettingsModal: React.FC = () => {
                   {devices.filter(d => d.device_id !== client?.getDeviceId()).map((device) => (
                     <div key={device.device_id} className="flex items-center justify-between rounded-xl bg-bg-nav p-5 border border-transparent hover:border-border-main transition group">
                       <div className="flex items-center">
-                        <div className="mr-4 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-hover text-text-muted group-hover:text-white transition">
+                        <div className="mr-4 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-hover text-text-muted group-hover:text-text-main transition">
                           <Monitor className="h-6 w-6" />
                         </div>
                         <div>
-                          <p className="font-bold text-white">{device.display_name || 'Unnamed Device'}</p>
+                          <p className="font-bold text-text-main">{device.display_name || 'Unnamed Device'}</p>
                           <p className="text-xs text-text-muted font-mono">{device.device_id}</p>
                           <div className="mt-1 flex items-center space-x-2">
                             <Clock className="h-3 w-3 text-text-muted" />
@@ -508,13 +508,13 @@ const SettingsModal: React.FC = () => {
 
           {activeTab === 'activity' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 pb-20">
-              <h1 className="mb-8 text-2xl font-bold text-white tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Activity Settings</h1>
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Activity Settings</h1>
               
               <section className="mb-10">
                 <div className="mb-4 flex items-center justify-between max-w-2xl">
                   <div className="flex items-center">
                     <Gamepad2 className="mr-2 h-5 w-5 text-accent-primary" />
-                    <h2 className="text-lg font-bold text-white uppercase tracking-wider">Registered Games</h2>
+                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Registered Games</h2>
                   </div>
                 </div>
                 <p className="mb-6 text-sm text-text-muted leading-relaxed max-w-2xl">
@@ -549,7 +549,7 @@ const SettingsModal: React.FC = () => {
                                   value={editName}
                                   onChange={(e) => setEditName(e.target.value)}
                                   onKeyDown={(e) => e.key === 'Enter' && handleRenameGame(process)}
-                                  className="flex-1 rounded bg-bg-main px-2 py-1 text-sm text-white outline-none border border-accent-primary"
+                                  className="flex-1 rounded bg-bg-main px-2 py-1 text-sm text-text-main outline-none border border-accent-primary"
                                 />
                                 <button 
                                   onClick={() => handleRenameGame(process)}
@@ -560,7 +560,7 @@ const SettingsModal: React.FC = () => {
                               </div>
                             ) : (
                               <div className="flex items-center group/name">
-                                <span className="text-sm font-bold text-white truncate">{displayName}</span>
+                                <span className="text-sm font-bold text-text-main truncate">{displayName}</span>
                                 <button 
                                   onClick={() => { setEditingGame(process); setEditName(displayName); }}
                                   className="ml-2 p-1 rounded hover:bg-bg-hover opacity-0 group-hover/name:opacity-100 transition"
@@ -592,7 +592,7 @@ const SettingsModal: React.FC = () => {
               <section className="mb-10">
                 <div className="mb-4 flex items-center">
                   <Monitor className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-white uppercase tracking-wider">Running Apps</h2>
+                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Running Apps</h2>
                 </div>
                 <p className="mb-6 text-sm text-text-muted leading-relaxed max-w-2xl">
                   Detected applications currently active on your device. Add them to your registered games list to show them in your status.
@@ -611,7 +611,7 @@ const SettingsModal: React.FC = () => {
                         className="flex items-center justify-between p-3 rounded-lg bg-bg-nav hover:bg-bg-hover cursor-pointer transition border border-transparent hover:border-accent-primary/30 group"
                       >
                         <div className="flex flex-col min-w-0">
-                          <span className="text-xs font-bold text-white truncate font-mono tracking-tighter">{process}</span>
+                          <span className="text-xs font-bold text-text-main truncate font-mono tracking-tighter">{process}</span>
                           <span className="text-[9px] text-text-muted uppercase italic">Process</span>
                         </div>
                         <Plus className="h-4 w-4 text-text-muted group-hover:text-accent-primary" />

@@ -12,6 +12,7 @@ import SecurityRecovery from './components/auth/SecurityRecovery';
 import ActiveCall from './components/calls/ActiveCall';
 import SettingsModal from './components/ui/SettingsModal';
 import ThemeManager from './components/ui/ThemeManager';
+import { ExploreModal } from './components/ui/ExploreModal';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   constructor(props: { children: ReactNode }) {
@@ -90,6 +91,7 @@ function MainApp() {
       <SecurityRecovery />
       {callWindowingMode !== 'integrated' && <ActiveCall />}
       <SettingsModal />
+      <ExploreModal />
     </div>
   );
 }

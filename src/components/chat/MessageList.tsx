@@ -144,14 +144,14 @@ const MessageList: React.FC<MessageListProps> = ({
           </div>
         )}
 
-        {groupedMessages.map((group) => (
+        {groupedMessages.map((group, index) => (
           <React.Fragment key={group.id}>
             <MessageItem 
               event={group.events[0]} 
               isContinuation={!group.showDetails}
               onJumpToEvent={onJumpToEvent}
             />
-            {readMarkerId === group.id && (
+            {readMarkerId === group.id && index !== groupedMessages.length - 1 && (
               <div className="relative my-4 flex items-center px-4">
                 <div className="h-px flex-1 bg-red-500/50" />
                 <span className="mx-4 text-[9px] font-black text-red-500 uppercase tracking-widest bg-bg-main px-2">New Messages</span>

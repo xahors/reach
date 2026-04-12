@@ -106,6 +106,7 @@ interface AppState {
   callFeeds: CallFeed[];
   incomingCall: MatrixCall | null;
   isSettingsOpen: boolean;
+  isExploreOpen: boolean;
   activeSettingsTab: 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance';
   isChannelDetailsOpen: boolean;
   isCallMinimized: boolean;
@@ -136,6 +137,7 @@ interface AppState {
   setCallFeeds: (feeds: CallFeed[]) => void;
   setIncomingCall: (call: MatrixCall | null) => void;
   setSettingsOpen: (isOpen: boolean, tab?: AppState['activeSettingsTab']) => void;
+  setExploreOpen: (isOpen: boolean) => void;
   setChannelDetailsOpen: (isOpen: boolean) => void;
   setCallMinimized: (isMinimized: boolean) => void;
   setMuted: (isMuted: boolean) => void;
@@ -172,6 +174,7 @@ export const useAppStore = create<AppState>()(
       callFeeds: [],
       incomingCall: null,
       isSettingsOpen: false,
+      isExploreOpen: false,
       activeSettingsTab: 'security',
       isChannelDetailsOpen: false,
       isCallMinimized: false,
@@ -225,6 +228,7 @@ export const useAppStore = create<AppState>()(
         isSettingsOpen: isOpen,
         activeSettingsTab: tab || state.activeSettingsTab
       })),
+      setExploreOpen: (isOpen) => set({ isExploreOpen: isOpen }),
       setChannelDetailsOpen: (isOpen) => set({ isChannelDetailsOpen: isOpen }),
       setCallMinimized: (isMinimized) => set({ isCallMinimized: isMinimized }),
       setMuted: (isMuted) => set({ isMuted }),
