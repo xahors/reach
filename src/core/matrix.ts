@@ -6,6 +6,7 @@ import { decodeRecoveryKey } from 'matrix-js-sdk/lib/crypto-api/recovery-key';
 import { deriveRecoveryKeyFromPassphrase } from 'matrix-js-sdk/lib/crypto-api/key-passphrase';
 import { useAppStore } from '../store/useAppStore';
 import { timelineManager } from './timelineManager';
+import { notificationService } from './notifications';
 
 declare global {
   interface Window {
@@ -27,6 +28,7 @@ class MatrixService {
   private tempRecoveryKey: string | null = null;
   private wasmInitialized = false;
   private isInitializing = false;
+  private isStarting = false;
 
   private async initWasm() {
     if (this.wasmInitialized) return;
@@ -293,36 +295,72 @@ class MatrixService {
   }
 
   async start() {
-    if (!this.client) return;
-    console.log("Starting Matrix client sync loop...");
+    if (!this.client) {
+      console.warn("Cannot start: no Matrix client instance.");
+      return;
+    }
     
-    // Track sync state transitions for debugging
-    this.client.on(sdk.ClientEvent.Sync, (state, prevState, data) => {
-      console.log(`Sync state: ${prevState} -> ${state}`, data?.error ? `Error: ${data.error}` : "");
+    if (this.client.clientRunning || this.isStarting) {
+      console.log("Matrix client sync loop already running or starting. Skipping start.");
+      return;
+    }
+
+    this.isStarting = true;
+    console.log("Starting Matrix client sync loop (clientRunning: false)...");
+    
+    try {
+      // Remove any existing listeners to avoid duplicates
+      this.client.removeAllListeners(sdk.ClientEvent.Sync);
+      this.client.removeAllListeners(sdk.RoomEvent.Timeline);
+
+      // Track sync state transitions for debugging
+      this.client.on(sdk.ClientEvent.Sync, (state, prevState, data) => {
+        console.log(`Sync state: ${prevState} -> ${state}`, data?.error ? `Error: ${data.error}` : "");
+        
+        if (state === 'ERROR') {
+          console.warn("Matrix sync error. SDK will retry.");
+        }
+      });
+
+      const syncFilter = new sdk.Filter(this.client.getUserId()!);
+      syncFilter.setDefinition({
+        room: {
+          timeline: { limit: 50 },
+          state: { lazy_load_members: true }
+        }
+      });
+
+      // Wrapped in try-catch to avoid crashing on transient network errors
+      try {
+        await this.client.startClient({ 
+          initialSyncLimit: 50,
+          lazyLoadMembers: true,
+          // pollTimeout: 20000 ensures sync loop completes before most proxy timeouts (usually 30s)
+          pollTimeout: 20000,
+          filter: syncFilter,
+        });
+      } catch (err) {
+        console.error("SDK failed to start client sync loop:", err);
+        // Don't re-throw, let the SDK retry or the user refresh
+      }
       
-      if (state === 'ERROR') {
-        console.warn("Matrix sync error. SDK will retry.");
-      }
-    });
+      console.log("Matrix client started.");
+      await this.syncPresenceWithStore();
 
-    const syncFilter = new sdk.Filter(this.client.getUserId()!, 'reach_sync_filter');
-    syncFilter.setDefinition({
-      room: {
-        timeline: { limit: 50 },
-        state: { lazy_load_members: true }
-      }
-    });
+      // Notification listener
+      this.client.on(sdk.RoomEvent.Timeline, (event, room, toStartOfTimeline) => {
+        if (toStartOfTimeline) return;
+        if (event.getType() !== sdk.EventType.RoomMessage) return;
+        if (this.client?.getSyncState() !== sdk.SyncState.Syncing) return;
 
-    await this.client.startClient({ 
-      initialSyncLimit: 50,
-      lazyLoadMembers: true,
-      // pollTimeout: 20000 ensures sync loop completes before most proxy timeouts (usually 30s)
-      pollTimeout: 20000,
-      filter: syncFilter,
-    });
-    
-    console.log("Matrix client started.");
-    await this.syncPresenceWithStore();
+        notificationService.notifyEvent(event, room?.name || 'Unknown Room');
+      });
+
+      // Request notification permission
+      notificationService.requestPermission();
+    } finally {
+      this.isStarting = false;
+    }
   }
 
   async setPresence(presence: "online" | "offline" | "unavailable", statusMsg?: string) {
@@ -361,6 +399,7 @@ class MatrixService {
     
     if (this.client) {
       console.log(`Stopping Matrix client (permanent: ${isPermanent})...`);
+      // Use a more thorough stop if permanent
       this.client.stopClient();
       
       if (isPermanent) {
@@ -373,11 +412,8 @@ class MatrixService {
   async reconnect() {
     if (this.client && !this.client.clientRunning) {
       console.log("Re-starting Matrix client sync loop...");
-      await this.client.startClient({ 
-        initialSyncLimit: 50,
-        lazyLoadMembers: true,
-        pollTimeout: 20000,
-      });
+      // Re-use the same start logic to ensure filters are applied
+      await this.start();
     }
   }
 

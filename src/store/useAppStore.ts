@@ -109,6 +109,7 @@ interface AppState {
   isExploreOpen: boolean;
   activeSettingsTab: 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance';
   isChannelDetailsOpen: boolean;
+  channelDetailsTab: 'members' | 'settings';
   isCallMinimized: boolean;
   isMuted: boolean;
   isCameraOff: boolean;
@@ -128,6 +129,19 @@ interface AppState {
   roomSectionOrder: Record<string, string[]>; // spaceId -> list of section names
   themeConfig: ThemeConfig;
   showUrlPreviews: boolean;
+  mediaPreview: {
+    url: string;
+    type: 'image' | 'video';
+    alt?: string;
+    file?: unknown;
+  } | null;
+  globalNotificationSettings: {
+    enabled: boolean;
+    soundEnabled: boolean;
+    desktopEnabled: boolean;
+    mentionsOnly: boolean;
+  };
+  roomNotificationSettings: Record<string, 'all' | 'mentions' | 'mute'>;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
   setActiveSpaceId: (id: string | null) => void;
@@ -138,7 +152,8 @@ interface AppState {
   setIncomingCall: (call: MatrixCall | null) => void;
   setSettingsOpen: (isOpen: boolean, tab?: AppState['activeSettingsTab']) => void;
   setExploreOpen: (isOpen: boolean) => void;
-  setChannelDetailsOpen: (isOpen: boolean) => void;
+  setChannelDetailsOpen: (isOpen: boolean, tab?: AppState['channelDetailsTab']) => void;
+  setChannelDetailsTab: (tab: AppState['channelDetailsTab']) => void;
   setCallMinimized: (isMinimized: boolean) => void;
   setMuted: (isMuted: boolean) => void;
   setCameraOff: (isCameraOff: boolean) => void;
@@ -159,6 +174,9 @@ interface AppState {
   removeSection: (spaceId: string, sectionName: string) => void;
   setThemeConfig: (config: Partial<ThemeConfig>) => void;
   setShowUrlPreviews: (show: boolean) => void;
+  setMediaPreview: (preview: AppState['mediaPreview']) => void;
+  setGlobalNotificationSettings: (settings: Partial<AppState['globalNotificationSettings']>) => void;
+  setRoomNotificationSetting: (roomId: string, setting: AppState['roomNotificationSettings'][string]) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -177,6 +195,7 @@ export const useAppStore = create<AppState>()(
       isExploreOpen: false,
       activeSettingsTab: 'security',
       isChannelDetailsOpen: false,
+      channelDetailsTab: 'members',
       isCallMinimized: false,
       isMuted: false,
       isCameraOff: true,
@@ -200,6 +219,14 @@ export const useAppStore = create<AppState>()(
         customCSS: '',
       },
       showUrlPreviews: true,
+      mediaPreview: null,
+      globalNotificationSettings: {
+        enabled: true,
+        soundEnabled: true,
+        desktopEnabled: true,
+        mentionsOnly: false,
+      },
+      roomNotificationSettings: {},
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
@@ -229,7 +256,11 @@ export const useAppStore = create<AppState>()(
         activeSettingsTab: tab || state.activeSettingsTab
       })),
       setExploreOpen: (isOpen) => set({ isExploreOpen: isOpen }),
-      setChannelDetailsOpen: (isOpen) => set({ isChannelDetailsOpen: isOpen }),
+      setChannelDetailsOpen: (isOpen, tab) => set((state) => ({ 
+        isChannelDetailsOpen: isOpen,
+        channelDetailsTab: tab || state.channelDetailsTab
+      })),
+      setChannelDetailsTab: (tab) => set({ channelDetailsTab: tab }),
       setCallMinimized: (isMinimized) => set({ isCallMinimized: isMinimized }),
       setMuted: (isMuted) => set({ isMuted }),
       setCameraOff: (isCameraOff) => set({ isCameraOff }),
@@ -280,6 +311,13 @@ export const useAppStore = create<AppState>()(
         themeConfig: { ...state.themeConfig, ...config }
       })),
       setShowUrlPreviews: (show) => set({ showUrlPreviews: show }),
+      setMediaPreview: (preview) => set({ mediaPreview: preview }),
+      setGlobalNotificationSettings: (settings) => set((state) => ({
+        globalNotificationSettings: { ...state.globalNotificationSettings, ...settings }
+      })),
+      setRoomNotificationSetting: (roomId, setting) => set((state) => ({
+        roomNotificationSettings: { ...state.roomNotificationSettings, [roomId]: setting }
+      })),
     }),
     {
       name: 'reach-app-storage',
@@ -298,6 +336,8 @@ export const useAppStore = create<AppState>()(
         showUrlPreviews: state.showUrlPreviews,
         activeSpaceId: state.activeSpaceId,
         activeRoomId: state.activeRoomId,
+        globalNotificationSettings: state.globalNotificationSettings,
+        roomNotificationSettings: state.roomNotificationSettings,
       }),
     }
   )

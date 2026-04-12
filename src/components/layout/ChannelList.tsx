@@ -29,7 +29,9 @@ const ChannelList: React.FC = () => {
     roomSectionOrder,
     setRoomSection,
     addSection,
-    removeSection
+    removeSection,
+    roomNotificationSettings,
+    setRoomNotificationSetting
   } = useAppStore();
   const { rooms } = useSpaceRooms(activeSpaceId);
   const { dms, loading: dmsLoading } = useDirectMessages();
@@ -186,20 +188,43 @@ const ChannelList: React.FC = () => {
             ref={contextMenuRef}
             className="absolute right-8 top-0 w-48 rounded-md bg-bg-sidebar shadow-2xl border border-border-main p-1 z-[100] animate-in fade-in zoom-in duration-150"
           >
-            <div className="px-2 py-1.5 text-[10px] font-bold uppercase text-text-muted border-b border-border-main mb-1 tracking-wider">Move to Section</div>
-            {currentSpaceSections.map(section => (
+            <div className="px-2 py-1.5 text-[10px] font-bold uppercase text-text-muted border-b border-border-main mb-1 tracking-wider">Notifications</div>
+            {[
+              { id: 'all', label: 'All Messages' },
+              { id: 'mentions', label: 'Mentions Only' },
+              { id: 'mute', label: 'Mute' },
+            ].map(option => (
               <button
-                key={section}
+                key={option.id}
                 onClick={() => {
-                  setRoomSection(room.roomId, section);
+                  setRoomNotificationSetting(room.roomId, option.id as 'all' | 'mentions' | 'mute');
                   setContextMenuRoom(null);
                 }}
-                className="flex w-full items-center px-2 py-1.5 rounded text-sm text-text-main hover:bg-accent-primary hover:text-bg-main transition font-bold"
+                className="flex w-full items-center px-2 py-1.5 rounded text-sm text-text-main hover:bg-bg-hover transition font-bold"
               >
-                {section}
-                {roomSections[room.roomId] === section && <Check className="ml-auto h-3.5 w-3.5" />}
+                {option.label}
+                {(roomNotificationSettings[room.roomId] || 'all') === option.id && <Check className="ml-auto h-3.5 w-3.5 text-accent-primary" />}
               </button>
             ))}
+
+            {!isDM && (
+              <>
+                <div className="px-2 py-1.5 text-[10px] font-bold uppercase text-text-muted border-b border-t border-border-main my-1 tracking-wider">Move to Section</div>
+                {currentSpaceSections.map(section => (
+                  <button
+                    key={section}
+                    onClick={() => {
+                      setRoomSection(room.roomId, section);
+                      setContextMenuRoom(null);
+                    }}
+                    className="flex w-full items-center px-2 py-1.5 rounded text-sm text-text-main hover:bg-bg-hover transition font-bold"
+                  >
+                    {section}
+                    {roomSections[room.roomId] === section && <Check className="ml-auto h-3.5 w-3.5 text-accent-primary" />}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>

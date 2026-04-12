@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useAppStore, THEME_PRESETS, type ThemeColors } from '../../store/useAppStore';
+import { useAppStore, THEME_PRESETS } from '../../store/useAppStore';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
+import { notificationService } from '../../core/notifications';
 import { 
-  X, Shield, Lock, LogOut, Bell, Monitor, Trash2, Clock, 
-  CheckCircle2, Gamepad2, Check, Plus, Edit2, Palette, Code, MessageSquare
+  X, Shield, Lock, LogOut, Bell, Monitor, 
+  CheckCircle2, Gamepad2, Edit2, Palette, Code,
+  Volume2, AtSign
 } from 'lucide-react';
 import type { IMyDevice } from 'matrix-js-sdk';
 import { useGamePresence } from '../../hooks/useGamePresence';
@@ -15,15 +17,17 @@ const SettingsModal: React.FC = () => {
     setSettingsOpen, 
     activeSettingsTab,
     setLoggedIn, 
-    trackedGames,
-    setTrackedGames,
     customGameNames,
     setCustomGameNames,
     detectedGame,
     themeConfig,
     setThemeConfig,
     showUrlPreviews,
-    setShowUrlPreviews
+    setShowUrlPreviews,
+    userPresence,
+    setUserPresence,
+    globalNotificationSettings,
+    setGlobalNotificationSettings
   } = useAppStore();
   
   const client = useMatrixClient();
@@ -50,15 +54,21 @@ const SettingsModal: React.FC = () => {
   const [devices, setDevices] = useState<IMyDevice[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
-  // Notifications state (local mock for now as Matrix push rules are complex)
-  const [notifSettings, setNotifSettings] = useState({
-    global: true,
-    mentions: true,
-    calls: true,
-    dms: true,
-    suppressEveryone: false,
-    suppressRoles: false
-  });
+  // Notifications state
+  const [notifSettings, setNotifSettings] = useState(globalNotificationSettings);
+
+  useEffect(() => {
+    setGlobalNotificationSettings(notifSettings);
+  }, [notifSettings, setGlobalNotificationSettings]);
+
+  const handleRequestPermission = async () => {
+    const granted = await notificationService.requestPermission();
+    if (granted) {
+      alert("Notification permission granted!");
+    } else {
+      alert("Notification permission denied or not supported.");
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'sessions' && client) {
@@ -99,308 +109,135 @@ const SettingsModal: React.FC = () => {
         if (crypto.loadSessionBackupPrivateKeyFromSecretStorage) {
             await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
         }
-        await crypto.restoreKeyBackup();
-        
-        setStatus('Success! Your session is verified.');
-        setRecoveryKey('');
-        setTimeout(() => setStatus(''), 3000);
       });
-    } catch (err) {
-      console.error(err);
-      setStatus('Failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setStatus('Successfully restored E2EE keys.');
+      setRecoveryKey('');
+    } catch (err: unknown) {
+      const error = err as Error;
+      setStatus(`Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleColorChange = (key: keyof ThemeColors, value: string) => {
-    setThemeConfig({
-      activePreset: 'custom',
-      colors: {
-        ...themeConfig.colors,
-        [key]: value
-      }
-    });
-  };
-
   return (
-    <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-200">
-      {/* Sidebar */}
-      <div className="flex w-60 flex-col bg-bg-sidebar py-12 px-2 border-r border-border-main">
-        <div className="mb-8 px-4">
-          <h2 className="text-xs font-black uppercase tracking-widest text-text-muted">User Settings</h2>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="flex h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-border-main bg-bg-main shadow-2xl animate-in zoom-in-95 duration-300">
+        {/* Sidebar */}
+        <div className="w-60 shrink-0 border-r border-border-main bg-bg-sidebar p-6 overflow-y-auto no-scrollbar">
+          <div className="mb-8">
+            <h2 className="mb-4 text-[10px] font-black uppercase tracking-widest text-text-muted">User Settings</h2>
+            <nav className="space-y-1">
+              {[
+                { id: 'security', label: 'Security & Privacy', icon: Shield },
+                { id: 'activity', label: 'Activity', icon: Gamepad2 },
+                { id: 'notifications', label: 'Notifications', icon: Bell },
+                { id: 'sessions', label: 'Active Sessions', icon: Monitor },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as 'security' | 'activity' | 'notifications' | 'sessions')}
+                  className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === item.id ? 'bg-bg-hover text-text-main ring-1 ring-white/10' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+                >
+                  <item.icon className={`mr-2 h-4 w-4 ${activeTab === item.id ? 'text-accent-primary' : ''}`} />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="mb-8">
+            <h2 className="mb-4 text-[10px] font-black uppercase tracking-widest text-text-muted">App Settings</h2>
+            <nav className="space-y-1">
+              {[
+                { id: 'appearance', label: 'Appearance', icon: Palette },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as 'appearance')}
+                  className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === item.id ? 'bg-bg-hover text-text-main ring-1 ring-white/10' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
+                >
+                  <item.icon className={`mr-2 h-4 w-4 ${activeTab === item.id ? 'text-accent-primary' : ''}`} />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="pt-4 border-t border-border-main/50">
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center rounded-md px-3 py-2 text-red-400 transition-all hover:bg-red-500/10"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              <span className="text-sm font-medium">Log Out</span>
+            </button>
+          </div>
         </div>
-        
-        <nav className="flex-1 space-y-0.5">
-          <button 
-            onClick={() => setActiveTab('appearance')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'appearance' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
-          >
-            <Palette className={`mr-2 h-4 w-4 ${activeTab === 'appearance' ? 'text-accent-primary' : ''}`} /> 
-            <span className="text-sm font-medium">Appearance</span>
-          </button>
 
-          <button 
-            onClick={() => setActiveTab('security')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'security' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
-          >
-            <Shield className={`mr-2 h-4 w-4 ${activeTab === 'security' ? 'text-accent-primary' : ''}`} /> 
-            <span className="text-sm font-medium">Security & Privacy</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('notifications')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'notifications' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
-          >
-            <Bell className={`mr-2 h-4 w-4 ${activeTab === 'notifications' ? 'text-accent-primary' : ''}`} /> 
-            <span className="text-sm font-medium">Notifications</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('sessions')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'sessions' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
-          >
-            <Monitor className={`mr-2 h-4 w-4 ${activeTab === 'sessions' ? 'text-accent-primary' : ''}`} /> 
-            <span className="text-sm font-medium">Active Sessions</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('activity')}
-            className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === 'activity' ? 'bg-bg-hover text-text-main' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
-          >
-            <Gamepad2 className={`mr-2 h-4 w-4 ${activeTab === 'activity' ? 'text-accent-primary' : ''}`} /> 
-            <span className="text-sm font-medium">Registered Games</span>
-          </button>
-
-          <div className="my-4 border-t border-border-main mx-3 opacity-50" />
-          
-          <button 
-            onClick={handleLogout}
-            className="flex w-full items-center rounded-md px-3 py-2 text-red-400 transition hover:bg-red-500/10"
-          >
-            <LogOut className="mr-2 h-4 w-4" /> 
-            <span className="text-sm font-medium">Logout</span>
-          </button>
-        </nav>
-      </div>
-
-      {/* Main Content */}
-      <div className="relative flex-1 bg-bg-main">
-        <div className="absolute top-12 right-12">
-          <button 
+        {/* Content */}
+        <div className="relative flex-1 overflow-y-auto p-10 bg-bg-main no-scrollbar">
+          <button
             onClick={() => setSettingsOpen(false)}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-border-main text-text-muted transition hover:bg-bg-hover hover:text-text-main"
+            className="absolute right-8 top-8 rounded-full border border-border-main p-2 text-text-muted transition hover:bg-bg-hover hover:text-white"
           >
-            <X className="h-6 w-6" />
+            <X className="h-5 w-5" />
           </button>
-          <span className="mt-2 block text-center text-[10px] font-bold uppercase text-text-muted">Esc</span>
-        </div>
-
-        <div className="mx-auto max-w-3xl py-12 px-10 h-full overflow-y-auto no-scrollbar">
-          
-          {activeTab === 'appearance' && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 pb-20">
-              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Appearance</h1>
-              
-              <section className="mb-12">
-                <div className="mb-6 flex items-center">
-                  <Palette className="mr-2 h-5 w-5 text-accent-primary" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Themes</h2>
-                </div>
-                
-                <div className="space-y-8">
-                  <div>
-                    <h3 className="mb-4 text-[10px] font-black uppercase text-text-muted tracking-[0.2em]">Standard</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                      {['oled', 'classic', 'slate', 'icebox'].map((presetId) => {
-                        const preset = presetId as keyof typeof THEME_PRESETS;
-                        return (
-                          <button
-                            key={preset}
-                            onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
-                            className={`relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all ${
-                              themeConfig.activePreset === preset 
-                                ? 'border-accent-primary bg-bg-hover ring-4 ring-accent-primary/10' 
-                                : 'border-border-main bg-bg-nav hover:border-text-muted hover:bg-bg-hover/50'
-                            }`}
-                          >
-                            <div className="flex flex-col space-y-2">
-                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-text-main' : 'text-text-muted'}`}>
-                                {preset}
-                              </span>
-                              <div className="flex space-x-1">
-                                <div className="h-4 w-4 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
-                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
-                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['text-main'] }} />
-                              </div>
-                            </div>
-                            {themeConfig.activePreset === preset && (
-                              <Check className="absolute top-2 right-2 h-3 w-3 text-accent-primary" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="mb-4 text-[10px] font-black uppercase text-text-muted tracking-[0.2em]">Accessibility</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {['protanopia', 'deuteranopia', 'tritanopia'].map((presetId) => {
-                        const preset = presetId as keyof typeof THEME_PRESETS;
-                        return (
-                          <button
-                            key={preset}
-                            onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
-                            className={`relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all ${
-                              themeConfig.activePreset === preset 
-                                ? 'border-accent-primary bg-bg-hover ring-4 ring-accent-primary/10' 
-                                : 'border-border-main bg-bg-nav hover:border-text-muted hover:bg-bg-hover/50'
-                            }`}
-                          >
-                            <div className="flex flex-col space-y-2">
-                              <span className={`text-[10px] font-black uppercase tracking-tight ${themeConfig.activePreset === preset ? 'text-text-main' : 'text-text-muted'}`}>
-                                {preset}
-                              </span>
-                              <div className="flex space-x-1">
-                                <div className="h-4 w-4 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
-                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
-                              </div>
-                            </div>
-                            {themeConfig.activePreset === preset && (
-                              <Check className="absolute top-2 right-2 h-3 w-3 text-accent-primary" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="mb-12">
-                <div className="mb-6 flex items-center">
-                  <MessageSquare className="mr-2 h-5 w-5 text-accent-primary" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Chat Features</h2>
-                </div>
-                <div className="space-y-3 max-w-2xl">
-                  <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
-                    <div>
-                      <p className="text-sm font-bold text-text-main uppercase tracking-tight">URL Previews</p>
-                      <p className="text-[10px] text-text-muted uppercase tracking-tighter">Show secure previews when hovering over links</p>
-                    </div>
-                    <div 
-                      onClick={() => setShowUrlPreviews(!showUrlPreviews)}
-                      className={`h-5 w-10 rounded-full p-1 cursor-pointer transition-colors ${showUrlPreviews ? 'bg-accent-primary' : 'bg-bg-hover'}`}
-                    >
-                      <div className={`h-3 w-3 rounded-full bg-white transition-transform ${showUrlPreviews ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="mb-12">
-                <div className="mb-6 flex items-center">
-                  <Edit2 className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Advanced Customization</h2>
-                </div>
-                
-                <div className="rounded-xl border border-border-main bg-bg-nav/30 p-6 space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {(Object.keys(themeConfig.colors) as Array<keyof ThemeColors>).map((colorKey) => (
-                      <div key={colorKey} className="flex flex-col space-y-2">
-                        <label className="text-[10px] font-bold text-text-muted uppercase tracking-tighter">{colorKey}</label>
-                        <div className="flex items-center space-x-2">
-                          <div 
-                            className="h-8 w-8 rounded border border-border-main shrink-0" 
-                            style={{ backgroundColor: themeConfig.colors[colorKey] }} 
-                          />
-                          <input 
-                            type="text"
-                            value={themeConfig.colors[colorKey]}
-                            onChange={(e) => handleColorChange(colorKey, e.target.value)}
-                            className="flex-1 rounded bg-bg-main px-3 py-1.5 text-xs font-mono text-text-main outline-none border border-border-main focus:border-accent-primary transition"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-6 flex items-center">
-                  <Code className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Custom CSS</h2>
-                </div>
-                <div className="rounded-xl border border-border-main bg-bg-nav p-4">
-                  <textarea
-                    value={themeConfig.customCSS}
-                    onChange={(e) => setThemeConfig({ customCSS: e.target.value })}
-                    placeholder="/* Add your custom styles here */\n.message-item {\n  border-left: 2px solid var(--accent-primary);\n}"
-                    className="h-40 w-full resize-none bg-transparent font-mono text-xs text-text-main outline-none placeholder:text-text-muted/30"
-                  />
-                </div>
-                <p className="mt-2 text-[10px] text-text-muted italic">Advanced: These styles are injected directly into the application head.</p>
-              </section>
-            </div>
-          )}
 
           {activeTab === 'security' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Security & Privacy</h1>
               
-              <section className="mb-10">
-                <div className="mb-4 flex items-center">
-                  <Lock className="mr-2 h-5 w-5 text-accent-primary" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Session Recovery</h2>
-                </div>
-                <p className="mb-6 text-sm text-text-muted leading-relaxed">
-                  Enter your Security Key to verify this session and restore access to encrypted messages.
-                </p>
-
-                <form onSubmit={handleRecover} className="space-y-4 rounded-xl border border-border-main bg-bg-nav p-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Recovery Key</label>
-                    <input 
-                      type="password"
-                      value={recoveryKey}
-                      onChange={(e) => setRecoveryKey(e.target.value)}
-                      placeholder="e.g. EsT2 1234 ..."
-                      className="w-full rounded bg-bg-main px-4 py-3 text-sm font-mono text-text-main outline-none border border-border-main focus:border-accent-primary transition"
-                    />
+              <div className="space-y-8">
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">E2EE Recovery</h2>
+                  <div className="rounded-xl bg-bg-nav p-6 border border-border-main/50">
+                    <p className="mb-4 text-sm text-text-muted">Enter your Security Key to restore your encrypted message history on this device.</p>
+                    <form onSubmit={handleRecover} className="space-y-4">
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3 h-4 w-4 text-text-muted" />
+                        <input
+                          type="password"
+                          value={recoveryKey}
+                          onChange={(e) => setRecoveryKey(e.target.value)}
+                          placeholder="Security Key (e.g. EsT2...)"
+                          className="w-full rounded-lg bg-bg-sidebar py-2.5 pl-10 pr-4 text-sm text-text-main outline-none focus:ring-2 focus:ring-accent-primary/50 transition-all border border-border-main"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={loading || !recoveryKey.trim()}
+                        className="flex w-full items-center justify-center rounded-lg bg-accent-primary py-2.5 text-sm font-black text-white transition hover:opacity-90 disabled:opacity-50 uppercase tracking-widest"
+                      >
+                        {loading ? 'Verifying...' : 'Restore History'}
+                      </button>
+                    </form>
+                    {status && (
+                      <div className={`mt-4 rounded-lg p-3 text-xs font-medium border ${status.startsWith('Error') ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>
+                        {status}
+                      </div>
+                    )}
                   </div>
-                  <button 
-                    disabled={loading || !recoveryKey.trim()}
-                    className="w-full rounded bg-accent-primary py-3 text-sm font-black text-bg-main transition hover:opacity-90 disabled:opacity-50"
-                  >
-                    {loading ? 'Processing...' : 'Verify Session'}
-                  </button>
-                  {status && (
-                    <p className={`mt-2 text-xs font-bold ${status.includes('Success') ? 'text-green-400' : 'text-yellow-400'}`}>
-                      {status}
-                    </p>
-                  )}
-                </form>
-              </section>
+                </section>
 
-              <section>
-                <div className="mb-4 flex items-center">
-                  <Shield className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Privacy Settings</h2>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
-                    <div>
-                      <p className="text-sm font-bold text-text-main">Direct Message Encryption</p>
-                      <p className="text-xs text-text-muted">Always encrypt DMs with new participants</p>
-                    </div>
-                    <div className="h-5 w-10 rounded-full bg-accent-primary p-1 cursor-pointer">
-                      <div className="h-3 w-3 rounded-full bg-bg-main ml-auto" />
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Privacy Settings</h2>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">URL Previews</p>
+                        <p className="text-xs text-text-muted">Allow Reach to fetch metadata for links you send or receive</p>
+                      </div>
+                      <div 
+                        onClick={() => setShowUrlPreviews(!showUrlPreviews)}
+                        className={`h-5 w-10 rounded-full p-1 cursor-pointer transition-colors ${showUrlPreviews ? 'bg-accent-primary' : 'bg-bg-hover'}`}
+                      >
+                        <div className={`h-3 w-3 rounded-full bg-white transition-transform ${showUrlPreviews ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              </div>
             </div>
           )}
 
@@ -410,20 +247,34 @@ const SettingsModal: React.FC = () => {
               
               <div className="space-y-8">
                 <section>
-                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Global Settings</h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xs font-black uppercase text-text-muted tracking-widest">Global Settings</h2>
+                    <button 
+                      onClick={handleRequestPermission}
+                      className="text-[10px] font-black uppercase text-accent-primary hover:underline"
+                    >
+                      Enable Desktop Notifications
+                    </button>
+                  </div>
                   <div className="space-y-3">
                     {[
-                      { key: 'global', label: 'Push Notifications', desc: 'Receive notifications on this device' },
-                      { key: 'calls', label: 'Incoming Calls', desc: 'Notify when someone starts a call' },
-                      { key: 'dms', label: 'Direct Messages', desc: 'Always notify for new DMs' }
+                      { key: 'enabled', label: 'All Notifications', desc: 'Master switch for all notifications', icon: Bell },
+                      { key: 'desktopEnabled', label: 'Desktop Notifications', desc: 'Show browser desktop alerts', icon: Monitor },
+                      { key: 'soundEnabled', label: 'Sound', desc: 'Play a sound for new messages', icon: Volume2 },
+                      { key: 'mentionsOnly', label: 'Mentions Only', desc: 'Only notify when you are mentioned', icon: AtSign }
                     ].map(item => (
                       <div key={item.key} className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
-                        <div>
-                          <p className="text-sm font-bold text-text-main">{item.label}</p>
-                          <p className="text-xs text-text-muted">{item.desc}</p>
+                        <div className="flex items-center space-x-4">
+                          <div className="p-2 bg-bg-sidebar rounded-lg">
+                            <item.icon className="h-4 w-4 text-accent-primary" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-text-main">{item.label}</p>
+                            <p className="text-xs text-text-muted">{item.desc}</p>
+                          </div>
                         </div>
                         <div 
-                          onClick={() => setNotifSettings(s => ({ ...s, [item.key]: !s[item.key as keyof typeof notifSettings] }))}
+                          onClick={() => setNotifSettings(s => ({ ...s, [item.key]: !s[item.key as keyof typeof s] }))}
                           className={`h-5 w-10 rounded-full p-1 cursor-pointer transition-colors ${notifSettings[item.key as keyof typeof notifSettings] ? 'bg-accent-primary' : 'bg-bg-hover'}`}
                         >
                           <div className={`h-3 w-3 rounded-full bg-white transition-transform ${notifSettings[item.key as keyof typeof notifSettings] ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -434,17 +285,26 @@ const SettingsModal: React.FC = () => {
                 </section>
 
                 <section>
-                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Suppressions</h2>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
-                      <div>
-                        <p className="text-sm font-bold text-text-main">Suppress @everyone</p>
-                        <p className="text-xs text-text-muted">Don't notify for broad mentions</p>
-                      </div>
-                      <div className="h-5 w-10 rounded-full bg-bg-hover p-1 cursor-not-allowed">
-                        <div className="h-3 w-3 rounded-full bg-bg-main" />
-                      </div>
-                    </div>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Status & DND</h2>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'online', label: 'Online', color: 'bg-green-500' },
+                      { id: 'idle', label: 'Idle', color: 'bg-yellow-500' },
+                      { id: 'dnd', label: 'Do Not Disturb', color: 'bg-red-500', desc: 'Mutes all notifications' },
+                      { id: 'invisible', label: 'Invisible', color: 'bg-gray-500' }
+                    ].map(status => (
+                      <button
+                        key={status.id}
+                        onClick={() => setUserPresence(status.id as 'online' | 'idle' | 'dnd' | 'invisible')}
+                        className={`flex flex-col items-start p-3 rounded-xl border transition-all ${userPresence === status.id ? 'bg-accent-primary/10 border-accent-primary' : 'bg-bg-nav border-transparent hover:border-border-main'}`}
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          <div className={`h-2.5 w-2.5 rounded-full ${status.color}`} />
+                          <span className="text-xs font-bold text-white">{status.label}</span>
+                        </div>
+                        {status.desc && <p className="text-[10px] text-text-muted text-left">{status.desc}</p>}
+                      </button>
+                    ))}
                   </div>
                 </section>
               </div>
@@ -457,185 +317,184 @@ const SettingsModal: React.FC = () => {
                 <h1 className="text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Active Sessions</h1>
                 <span className="text-[10px] font-mono text-text-muted bg-bg-hover px-2 py-1 rounded">DEVICE_ID: {client?.getDeviceId()}</span>
               </div>
-
-              {sessionsLoading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map(i => <div key={i} className="h-20 w-full animate-pulse rounded-xl bg-bg-nav" />)}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="rounded-xl border-2 border-accent-primary bg-accent-primary/5 p-6 mb-8">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center">
-                        <div className="mr-3 flex h-8 w-8 items-center justify-center rounded-full bg-accent-primary text-bg-main">
-                          <CheckCircle2 className="h-5 w-5" />
-                        </div>
-                        <h2 className="font-black text-text-main uppercase tracking-tighter text-lg">Current Session</h2>
-                      </div>
-                      <span className="rounded bg-accent-primary px-2 py-0.5 text-[10px] font-black text-bg-main uppercase tracking-widest">Active Now</span>
-                    </div>
-                    <p className="text-xs text-text-muted font-mono mb-1">Session ID: {client?.getDeviceId()}</p>
-                    <p className="text-xs text-text-muted">Last seen: Just now</p>
+              
+              <div className="space-y-4">
+                {sessionsLoading ? (
+                  <div className="flex justify-center p-12">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-primary border-t-transparent" />
                   </div>
-
-                  <h3 className="text-xs font-black uppercase text-text-muted tracking-widest px-2 mb-4">Other Devices</h3>
-                  {devices.filter(d => d.device_id !== client?.getDeviceId()).map((device) => (
-                    <div key={device.device_id} className="flex items-center justify-between rounded-xl bg-bg-nav p-5 border border-transparent hover:border-border-main transition group">
-                      <div className="flex items-center">
-                        <div className="mr-4 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-hover text-text-muted group-hover:text-text-main transition">
-                          <Monitor className="h-6 w-6" />
+                ) : (
+                  devices.map(device => (
+                    <div key={device.device_id} className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-border-main/30 group hover:border-border-main transition-colors shadow-sm">
+                      <div className="flex items-center space-x-4">
+                        <div className="p-2 bg-bg-sidebar rounded-lg">
+                          <Monitor className="h-5 w-5 text-accent-primary" />
                         </div>
                         <div>
-                          <p className="font-bold text-text-main">{device.display_name || 'Unnamed Device'}</p>
-                          <p className="text-xs text-text-muted font-mono">{device.device_id}</p>
-                          <div className="mt-1 flex items-center space-x-2">
-                            <Clock className="h-3 w-3 text-text-muted" />
-                            <span className="text-[10px] text-text-muted">
-                              Last seen {device.last_seen_ts ? new Date(device.last_seen_ts).toLocaleDateString() : 'Unknown'}
-                            </span>
+                          <p className="text-sm font-bold text-text-main">{device.display_name || 'Unknown Device'}</p>
+                          <div className="flex items-center space-x-2">
+                            <p className="text-[10px] font-mono text-text-muted">{device.device_id}</p>
+                            {device.device_id === client?.getDeviceId() && (
+                              <span className="rounded bg-accent-primary/10 px-1.5 py-0.5 text-[8px] font-black uppercase text-accent-primary">Current Session</span>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <button className="rounded-lg p-2 text-text-muted hover:bg-red-500/10 hover:text-red-400 transition">
-                        <Trash2 className="h-5 w-5" />
+                      <div className="text-right">
+                        <p className="text-[10px] text-text-muted">Last seen: {device.last_seen_ts ? new Date(device.last_seen_ts).toLocaleDateString() : 'Never'}</p>
+                        <p className="text-[10px] text-text-muted">{device.last_seen_ip || 'Hidden IP'}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'activity' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Game Activity</h1>
+              
+              <div className="space-y-8">
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Currently Detected</h2>
+                  {detectedGame ? (
+                    <div className="rounded-xl bg-accent-primary/5 p-6 border border-accent-primary/30">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-primary/10 text-accent-primary">
+                            <Gamepad2 className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-white uppercase tracking-tighter">
+                              {customGameNames[detectedGame] || detectedGame}
+                            </h3>
+                            <p className="text-xs text-text-muted font-medium">Reach is currently displaying this as your status</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button 
+                            onClick={() => {
+                              setEditingGame(detectedGame);
+                              setEditName(customGameNames[detectedGame] || detectedGame);
+                            }}
+                            className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-bg-nav p-8 border border-dashed border-border-main text-center">
+                      <p className="text-sm text-text-muted font-medium italic">No active games detected from your system</p>
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Running Processes</h2>
+                  <div className="space-y-2">
+                    {runningProcesses.slice(0, 10).map(proc => (
+                      <div key={proc} className="flex items-center justify-between rounded-lg bg-bg-nav px-4 py-2 border border-transparent hover:border-border-main transition group">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-1.5 w-1.5 rounded-full bg-text-muted group-hover:bg-accent-primary transition-colors" />
+                          <span className="text-xs font-medium text-text-muted group-hover:text-text-main transition-colors">{proc}</span>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setEditingGame(proc);
+                            setEditName(customGameNames[proc] || proc);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-text-muted hover:text-white transition"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              {editingGame && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+                  <div className="w-full max-w-sm rounded-2xl bg-bg-sidebar border border-border-main p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                    <h2 className="mb-4 text-lg font-bold text-white uppercase tracking-tighter">Rename Game</h2>
+                    <p className="mb-4 text-xs text-text-muted font-medium">How should <span className="text-accent-primary">{editingGame}</span> appear to others?</p>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="mb-6 w-full rounded-lg bg-bg-main px-4 py-2 text-sm text-white outline-none ring-1 ring-border-main focus:ring-accent-primary transition-all"
+                    />
+                    <div className="flex space-x-3">
+                      <button 
+                        onClick={() => setEditingGame(null)}
+                        className="flex-1 rounded-lg px-4 py-2 text-xs font-bold text-text-muted hover:bg-white/5 transition uppercase tracking-widest"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={() => handleRenameGame(editingGame)}
+                        className="flex-1 rounded-lg bg-accent-primary px-4 py-2 text-xs font-black text-white transition hover:opacity-90 uppercase tracking-widest shadow-lg shadow-accent-primary/20"
+                      >
+                        Save
                       </button>
                     </div>
-                  ))}
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {activeTab === 'activity' && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 pb-20">
-              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Activity Settings</h1>
+          {activeTab === 'appearance' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Appearance</h1>
               
-              <section className="mb-10">
-                <div className="mb-4 flex items-center justify-between max-w-2xl">
-                  <div className="flex items-center">
-                    <Gamepad2 className="mr-2 h-5 w-5 text-accent-primary" />
-                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Registered Games</h2>
-                  </div>
-                </div>
-                <p className="mb-6 text-sm text-text-muted leading-relaxed max-w-2xl">
-                  Reach will automatically update your status when it detects these games running on your system.
-                </p>
-
-                <div className="grid gap-3 max-w-2xl">
-                  {trackedGames.length === 0 && (
-                    <div className="p-8 rounded-xl border border-dashed border-border-main text-center bg-bg-nav/20">
-                      <p className="text-sm text-text-muted italic">No games registered yet. Add one from the list below!</p>
-                    </div>
-                  )}
-                  {trackedGames.map((process) => {
-                    const isEditing = editingGame === process;
-                    const displayName = customGameNames[process] || process;
-                    
-                    return (
-                      <div 
-                        key={process}
-                        className="flex items-center justify-between p-4 rounded-xl bg-bg-nav border border-transparent hover:border-border-main transition group"
+              <div className="space-y-8">
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Theme Presets</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                    {(Object.keys(THEME_PRESETS) as Array<keyof typeof THEME_PRESETS>).map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
+                        className={`group relative overflow-hidden rounded-xl border p-4 text-left transition-all ${themeConfig.activePreset === preset ? 'border-accent-primary ring-1 ring-accent-primary shadow-lg shadow-accent-primary/10' : 'border-border-main hover:border-text-muted hover:bg-white/5'}`}
                       >
-                        <div className="flex flex-1 items-center min-w-0 mr-4">
-                          <div className="h-10 w-10 rounded-lg bg-bg-hover flex items-center justify-center mr-4 shrink-0">
-                            <Gamepad2 className="h-5 w-5 text-accent-primary" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            {isEditing ? (
-                              <div className="flex items-center space-x-2">
-                                <input 
-                                  autoFocus
-                                  type="text"
-                                  value={editName}
-                                  onChange={(e) => setEditName(e.target.value)}
-                                  onKeyDown={(e) => e.key === 'Enter' && handleRenameGame(process)}
-                                  className="flex-1 rounded bg-bg-main px-2 py-1 text-sm text-text-main outline-none border border-accent-primary"
-                                />
-                                <button 
-                                  onClick={() => handleRenameGame(process)}
-                                  className="p-1 rounded bg-accent-primary text-bg-main hover:bg-opacity-90 transition"
-                                >
-                                  <Check className="h-4 w-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center group/name">
-                                <span className="text-sm font-bold text-text-main truncate">{displayName}</span>
-                                <button 
-                                  onClick={() => { setEditingGame(process); setEditName(displayName); }}
-                                  className="ml-2 p-1 rounded hover:bg-bg-hover opacity-0 group-hover/name:opacity-100 transition"
-                                >
-                                  <Edit2 className="h-3 w-3 text-text-muted" />
-                                </button>
-                              </div>
-                            )}
-                            <div className="flex items-center text-[10px] font-mono text-text-muted uppercase tracking-tight mt-0.5">
-                              <span>PID: {process}</span>
-                              {detectedGame === process && (
-                                <span className="ml-2 px-1 rounded bg-green-500/20 text-green-400 font-bold tracking-tighter">Running</span>
-                              )}
-                            </div>
-                          </div>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-black uppercase tracking-tighter ${themeConfig.activePreset === preset ? 'text-accent-primary' : 'text-text-main'}`}>
+                            {preset}
+                          </span>
+                          {themeConfig.activePreset === preset && <CheckCircle2 className="h-4 w-4 text-accent-primary" />}
                         </div>
-                        <button 
-                          onClick={() => setTrackedGames(trackedGames.filter(g => g !== process))}
-                          className="p-2 rounded-lg text-text-muted hover:bg-red-500/10 hover:text-red-400 transition"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <section className="mb-10">
-                <div className="mb-4 flex items-center">
-                  <Monitor className="mr-2 h-5 w-5 text-text-muted" />
-                  <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Running Apps</h2>
-                </div>
-                <p className="mb-6 text-sm text-text-muted leading-relaxed max-w-2xl">
-                  Detected applications currently active on your device. Add them to your registered games list to show them in your status.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-3xl">
-                  {runningProcesses
-                    .filter(p => !trackedGames.includes(p))
-                    .slice(0, 20)
-                    .map((process) => (
-                      <div 
-                        key={process}
-                        onClick={() => {
-                          setTrackedGames([...trackedGames, process]);
-                        }}
-                        className="flex items-center justify-between p-3 rounded-lg bg-bg-nav hover:bg-bg-hover cursor-pointer transition border border-transparent hover:border-accent-primary/30 group"
-                      >
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-xs font-bold text-text-main truncate font-mono tracking-tighter">{process}</span>
-                          <span className="text-[9px] text-text-muted uppercase italic">Process</span>
+                        <div className="mt-3 flex space-x-1">
+                          <div className="h-3 w-3 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
+                          <div className="h-3 w-3 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
+                          <div className="h-3 w-3 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-nav'] }} />
                         </div>
-                        <Plus className="h-4 w-4 text-text-muted group-hover:text-accent-primary" />
-                      </div>
+                      </button>
                     ))}
-                </div>
-              </section>
+                  </div>
+                </section>
 
-              <section className="rounded-xl border border-border-main p-6 bg-bg-nav/20 max-w-2xl">
-                <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Status Preview</h2>
-                {detectedGame ? (
-                  <div className="flex items-center space-x-4">
-                    <div className="h-3 w-3 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse" />
-                    <span className="text-sm text-text-main font-medium">
-                      Currently Playing <span className="font-bold text-accent-primary">{customGameNames[detectedGame] || detectedGame}</span>
-                    </span>
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Advanced Styling</h2>
+                  <div className="rounded-xl bg-bg-nav p-6 border border-border-main/50">
+                    <div className="flex items-center space-x-2 mb-4">
+                      <Code className="h-4 w-4 text-accent-primary" />
+                      <h3 className="text-sm font-bold text-white uppercase tracking-tighter">Custom CSS</h3>
+                    </div>
+                    <textarea
+                      value={themeConfig.customCSS}
+                      onChange={(e) => setThemeConfig({ customCSS: e.target.value })}
+                      placeholder="/* Add your custom CSS here... */"
+                      className="h-32 w-full rounded-lg bg-bg-sidebar p-4 font-mono text-xs text-text-main outline-none ring-1 ring-border-main focus:ring-accent-primary transition-all"
+                    />
+                    <p className="mt-2 text-[10px] text-text-muted italic">Warning: Custom CSS can break the application layout. Use with caution.</p>
                   </div>
-                ) : (
-                  <div className="flex items-center space-x-4 opacity-50">
-                    <div className="h-3 w-3 rounded-full bg-text-muted" />
-                    <span className="text-sm text-text-main font-medium italic uppercase tracking-wider">Idle — Monitoring background tasks</span>
-                  </div>
-                )}
-              </section>
+                </section>
+              </div>
             </div>
           )}
         </div>

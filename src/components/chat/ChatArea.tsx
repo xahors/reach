@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
@@ -9,8 +9,9 @@ import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
 import ActiveCall from '../calls/ActiveCall';
 import { EventType } from 'matrix-js-sdk';
-import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X, Volume2 } from 'lucide-react';
+import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X, Volume2, Upload } from 'lucide-react';
 import { callManager } from '../../core/callManager';
+import { useFileUpload } from '../../hooks/useFileUpload';
 
 const PinnedMessages: React.FC<{ roomId: string, onJumpToEvent: (id: string) => void }> = ({ roomId, onJumpToEvent }) => {
   const { pinnedEventIds } = usePinnedEvents(roomId);
@@ -59,6 +60,7 @@ const ChatArea: React.FC = () => {
     activeRoomId, 
     isChannelDetailsOpen, 
     setChannelDetailsOpen, 
+    channelDetailsTab,
     isCallMinimized, 
     setCallMinimized, 
     activeCall,
@@ -67,13 +69,24 @@ const ChatArea: React.FC = () => {
     setMuted,
     isCameraOff,
     setCameraOff,
-    callWindowingMode,
-    setSettingsOpen
+    callWindowingMode
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
   const { messages, loading, paginate, canPaginate, canPaginateForward, markAsRead, readMarkerId, jumpToEvent, jumpToLive } = useRoomMessages(roomId);
   const { hasGroupCall, participantCount, isCallActive } = useGroupCall(roomId);
+  const [isDragging, setIsDragging] = useState(false);
+  const { uploadFile } = useFileUpload(client, activeRoomId || '');
+
+  const handleFilesDrop = useCallback(async (files: File[]) => {
+    for (const file of files) {
+      try {
+        await uploadFile(file);
+      } catch (err) {
+        console.error("Failed to upload dropped file:", err);
+      }
+    }
+  }, [uploadFile]);
 
   const activeRoom = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
@@ -210,13 +223,13 @@ const ChatArea: React.FC = () => {
             <Video className="h-5 w-5 cursor-pointer" />
           </button>
           <Bell 
-            className="h-5 w-5 cursor-pointer hover:text-text-main transition-colors" 
-            onClick={() => setSettingsOpen(true, 'notifications')}
+            className={`h-5 w-5 cursor-pointer transition-colors ${isChannelDetailsOpen && channelDetailsTab === 'settings' ? 'text-accent-primary' : 'hover:text-text-main'}`}
+            onClick={() => setChannelDetailsOpen(!(isChannelDetailsOpen && channelDetailsTab === 'settings'), 'settings')}
           />
           <Pin className="h-5 w-5 cursor-pointer hover:text-text-main" />
           <Users 
-            className={`h-5 w-5 cursor-pointer transition-colors ${isChannelDetailsOpen ? 'text-accent-primary' : 'hover:text-text-main'}`}
-            onClick={() => setChannelDetailsOpen(!isChannelDetailsOpen)}
+            className={`h-5 w-5 cursor-pointer transition-colors ${isChannelDetailsOpen && channelDetailsTab === 'members' ? 'text-accent-primary' : 'hover:text-text-main'}`}
+            onClick={() => setChannelDetailsOpen(!(isChannelDetailsOpen && channelDetailsTab === 'members'), 'members')}
           />
           <div className="relative hidden md:flex items-center">
             <input 
@@ -232,7 +245,35 @@ const ChatArea: React.FC = () => {
 
       {activeRoomId && <PinnedMessages roomId={activeRoomId} onJumpToEvent={jumpToEvent} />}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative" 
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+          const files = Array.from(e.dataTransfer.files);
+          if (files.length > 0) {
+            handleFilesDrop(files);
+          }
+        }}
+      >
+        {isDragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-accent-primary/20 backdrop-blur-[2px] border-2 border-dashed border-accent-primary m-4 rounded-xl animate-in fade-in duration-200">
+            <div className="flex flex-col items-center space-y-4 bg-bg-nav p-8 rounded-2xl shadow-2xl border border-border-main">
+              <div className="p-4 bg-accent-primary/10 rounded-full text-accent-primary animate-bounce">
+                <Upload className="h-12 w-12" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Drop to upload</h3>
+                <p className="text-sm text-text-muted font-medium">Your files will be shared securely</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-1 flex-col overflow-hidden relative">
           {(activeCall || activeGroupCall) && callWindowingMode === 'integrated' ? (
             <div className="flex-1 bg-black animate-in fade-in zoom-in duration-300 relative overflow-hidden">

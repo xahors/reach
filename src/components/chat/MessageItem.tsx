@@ -5,6 +5,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { UrlPreview } from './UrlPreview';
+import { DecryptedMedia } from './DecryptedMedia';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -135,27 +136,25 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
   const body = isRedacted ? 'This message was deleted.' : content.body;
   
   let media = null;
-  if (!isRedacted && content.msgtype === 'm.image' && content.url) {
-    const mxcUrl = content.url;
-    const httpUrl = client?.mxcUrlToHttp(mxcUrl, 400, 400, 'scale', true);
-    if (httpUrl) {
-      media = (
-        <div className="mt-2 overflow-hidden rounded-lg border border-border-main max-w-sm bg-bg-nav">
-          <img src={httpUrl} alt={body} className="max-h-80 w-auto object-contain transition-transform hover:scale-[1.02] cursor-zoom-in" />
-        </div>
-      );
-    }
-  } else if (!isRedacted && content.msgtype === 'm.sticker' && content.url) {
-    const mxcUrl = content.url;
-    const httpUrl = client?.mxcUrlToHttp(mxcUrl, 160, 160, 'scale', true);
-    if (httpUrl) {
-      media = (
-        <div className="mt-1 max-w-[160px]">
-          <img src={httpUrl} alt={body} className="h-auto w-full object-contain" />
-        </div>
-      );
-    }
+  const isImage = !isRedacted && (content.msgtype === 'm.image' || content.msgtype === 'm.sticker');
+  const isVideo = !isRedacted && content.msgtype === 'm.video';
+  const isFile = !isRedacted && content.msgtype === 'm.file';
+
+  if ((isImage || isVideo || isFile) && (content.url || content.file)) {
+    media = (
+      <DecryptedMedia
+        file={content.file}
+        mxcUrl={content.url}
+        type={content.msgtype === 'm.video' ? 'video' : content.msgtype === 'm.sticker' ? 'sticker' : content.msgtype === 'm.file' ? 'file' : 'image'}
+        alt={body}
+        thumbnailUrl={content.info?.thumbnail_url || content.info?.thumbnail_file?.url}
+        filename={content.info?.filename || content.body || (content.file && content.file.name)}
+        filesize={content.info?.size || (content.file && content.file.size)}
+      />
+    );
   }
+  // If we have media and the body is just the filename, we can skip rendering the body text
+  const shouldShowBody = !isRedacted && (!media || (body && body !== content.info?.filename && body !== content.file?.name));
 
   const isReply = !!content['m.relates_to']?.['m.in_reply_to'];
   const replyEventId = content['m.relates_to']?.['m.in_reply_to']?.event_id;
@@ -281,16 +280,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
         )}
 
         <div className="flex flex-col">
-          <div className={cn(
-            "text-sm leading-relaxed tracking-tight",
-            isRedacted ? "text-text-muted italic opacity-50" : "text-text-main",
-            status === EventStatus.SENDING ? "opacity-50" : ""
-          )}>
-            {isRedacted ? body : renderBodyWithLinks(body || '')}
-            {isEdited && (
-              <span className="ml-1 text-[9px] text-text-muted select-none uppercase tracking-tighter font-bold opacity-60">(edited)</span>
-            )}
-          </div>
+          {shouldShowBody && (
+            <div className={cn(
+              "text-sm leading-relaxed tracking-tight",
+              isRedacted ? "text-text-muted italic opacity-50" : "text-text-main",
+              status === EventStatus.SENDING ? "opacity-50" : ""
+            )}>
+              {isRedacted ? body : renderBodyWithLinks(body || '')}
+              {isEdited && (
+                <span className="ml-1 text-[9px] text-text-muted select-none uppercase tracking-tighter font-bold opacity-60">(edited)</span>
+              )}
+            </div>
+          )}
           {media}
         </div>
       </div>

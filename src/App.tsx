@@ -13,6 +13,7 @@ import ActiveCall from './components/calls/ActiveCall';
 import SettingsModal from './components/ui/SettingsModal';
 import ThemeManager from './components/ui/ThemeManager';
 import { ExploreModal } from './components/ui/ExploreModal';
+import MediaLightbox from './components/ui/MediaLightbox';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   constructor(props: { children: ReactNode }) {
@@ -92,6 +93,7 @@ function MainApp() {
       {callWindowingMode !== 'integrated' && <ActiveCall />}
       <SettingsModal />
       <ExploreModal />
+      <MediaLightbox />
     </div>
   );
 }
@@ -102,15 +104,21 @@ function App() {
 
   useEffect(() => {
     const initMatrix = async () => {
+      const existingClient = matrixService.getClient();
+      if (existingClient && existingClient.clientRunning) {
+        console.log('Matrix client already running.');
+        setInitializing(false);
+        return;
+      }
+
       // Safety timeout to not hang forever if sync is slow
       const timeout = setTimeout(() => {
         setInitializing(false);
       }, 8000);
 
       try {
-        const existingClient = matrixService.getClient();
         if (existingClient) {
-          console.log('Client already exists, reconnecting...');
+          console.log('Client exists but not running, reconnecting...');
           await matrixService.reconnect();
           setLoggedIn(true, existingClient.getUserId());
           callManager.init();

@@ -1,8 +1,9 @@
 import React from 'react';
 import { Room } from 'matrix-js-sdk';
 import { cn } from '../../utils/cn';
-import { Hash, Video, Volume2 } from 'lucide-react';
+import { Hash, Video, Volume2, BellOff, AtSign } from 'lucide-react';
 import { useGroupCall } from '../../hooks/useGroupCall';
+import { useAppStore } from '../../store/useAppStore';
 
 interface RoomItemProps {
   room: Room;
@@ -12,6 +13,9 @@ interface RoomItemProps {
 
 const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick }) => {
   const { isCallActive } = useGroupCall(room.roomId);
+  const roomNotificationSettings = useAppStore(state => state.roomNotificationSettings);
+  
+  const roomSetting = roomNotificationSettings[room.roomId] || 'all';
 
   const Icon = isCallActive ? Volume2 : Hash;
 
@@ -31,9 +35,11 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick }) => {
           isActive || isCallActive ? "text-accent-primary" : "text-text-muted group-hover:text-text-main"
         )} />
         <span className={cn(
-          "truncate text-sm font-medium tracking-tight",
+          "truncate text-sm font-medium tracking-tight mr-1",
           isActive ? "font-bold" : ""
         )}>{room.name}</span>
+        {roomSetting === 'mute' && <BellOff className="h-2.5 w-2.5 text-text-muted/50 shrink-0" />}
+        {roomSetting === 'mentions' && <AtSign className="h-2.5 w-2.5 text-accent-primary/50 shrink-0" />}
       </div>
       {isCallActive && (
         <div className="flex h-4 w-4 items-center justify-center rounded-full bg-accent-primary/20 text-accent-primary animate-pulse">

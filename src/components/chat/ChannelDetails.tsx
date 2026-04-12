@@ -1,18 +1,27 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useRoomMembers } from '../../hooks/useRoomMembers';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
-import { Users, Settings, Gamepad2, X, Trash2, Info } from 'lucide-react';
+import { Users, Gamepad2, X, Trash2, Info, Bell, BellOff, AtSign, Check } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { type RoomMember } from 'matrix-js-sdk';
 
 const ChannelDetails: React.FC = () => {
-  const { activeRoomId, setChannelDetailsOpen } = useAppStore();
+  const { 
+    activeRoomId, 
+    setChannelDetailsOpen, 
+    channelDetailsTab, 
+    setChannelDetailsTab,
+    roomNotificationSettings,
+    setRoomNotificationSetting
+  } = useAppStore();
   const { members, loading } = useRoomMembers(activeRoomId);
   const { redactAllMyMessages } = useRoomMessages(activeRoomId);
   const client = useMatrixClient();
-  const [activeTab, setActiveTab] = useState<'members' | 'settings'>('members');
+  
+  const activeTab = channelDetailsTab;
+  const setActiveTab = setChannelDetailsTab;
 
   const room = activeRoomId ? client?.getRoom(activeRoomId) : null;
 
@@ -37,6 +46,8 @@ const ChannelDetails: React.FC = () => {
       default: return 'bg-gray-500';
     }
   };
+
+  const currentNotifSetting = roomNotificationSettings[room.roomId] || 'all';
 
   const renderMemberGroup = (title: string, groupMembers: typeof members) => {
     if (groupMembers.length === 0) return null;
@@ -156,11 +167,39 @@ const ChannelDetails: React.FC = () => {
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-right-2 duration-300">
             <section>
+              <h4 className="mb-3 text-[10px] font-black uppercase text-text-muted tracking-widest px-1">Notifications</h4>
+              <div className="space-y-1 rounded-xl border border-border-main bg-bg-nav/50 p-1">
+                {[
+                  { id: 'all', label: 'All Messages', icon: Bell },
+                  { id: 'mentions', label: 'Mentions Only', icon: AtSign },
+                  { id: 'mute', label: 'Muted', icon: BellOff },
+                ].map(option => (
+                  <button
+                    key={option.id}
+                    onClick={() => setRoomNotificationSetting(room.roomId, option.id as 'all' | 'mentions' | 'mute')}
+                    className={cn(
+                      "flex w-full items-center justify-between px-3 py-2 rounded-lg text-xs transition-all font-bold uppercase tracking-tighter",
+                      currentNotifSetting === option.id 
+                        ? "bg-accent-primary text-bg-main shadow-lg shadow-accent-primary/20" 
+                        : "text-text-muted hover:bg-bg-hover hover:text-text-main"
+                    )}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <option.icon className="h-3.5 w-3.5" />
+                      <span>{option.label}</span>
+                    </div>
+                    {currentNotifSetting === option.id && <Check className="h-3.5 w-3.5" />}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section>
               <h4 className="mb-3 text-[10px] font-black uppercase text-text-muted tracking-widest px-1">Room Info</h4>
-              <div className="rounded-xl border border-border-main bg-bg-nav/50 p-4 space-y-3">
+              <div className="rounded-xl border border-border-main bg-bg-nav/50 p-4 space-y-3 shadow-sm">
                 <div>
                   <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Room ID</label>
-                  <code className="text-[10px] text-accent-primary bg-bg-main p-1 rounded break-all block font-mono border border-border-main">
+                  <code className="text-[10px] text-accent-primary bg-bg-main p-1.5 rounded break-all block font-mono border border-border-main leading-relaxed">
                     {room.roomId}
                   </code>
                 </div>
@@ -176,12 +215,12 @@ const ChannelDetails: React.FC = () => {
               <div className="space-y-2">
                 <button 
                   onClick={() => redactAllMyMessages()}
-                  className="flex w-full items-center space-x-3 rounded-xl border border-transparent bg-red-500/10 p-3 text-red-400 transition hover:bg-red-500/20"
+                  className="flex w-full items-center space-x-3 rounded-xl border border-transparent bg-red-500/10 p-3 text-red-400 transition hover:bg-red-500/20 shadow-sm"
                 >
                   <Trash2 className="h-4 w-4" />
                   <span className="text-xs font-black uppercase tracking-tighter">Redact My Messages</span>
                 </button>
-                <button className="flex w-full items-center space-x-3 rounded-xl border border-transparent bg-bg-nav/50 p-3 text-text-muted transition hover:bg-bg-hover hover:text-text-main">
+                <button className="flex w-full items-center space-x-3 rounded-xl border border-transparent bg-bg-nav/50 p-3 text-text-muted transition hover:bg-bg-hover hover:text-text-main shadow-sm">
                   <Info className="h-4 w-4" />
                   <span className="text-xs font-black uppercase tracking-tighter">View Source</span>
                 </button>
@@ -189,14 +228,6 @@ const ChannelDetails: React.FC = () => {
             </section>
           </div>
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="border-t border-border-main p-4 bg-bg-sidebar">
-        <button className="flex w-full items-center justify-center space-x-2 rounded-lg bg-bg-hover border border-border-main px-4 py-2 text-text-muted hover:text-white transition group">
-          <Settings className="h-4 w-4 transition-transform group-hover:rotate-90" />
-          <span className="text-xs font-black uppercase tracking-widest">Channel Settings</span>
-        </button>
       </div>
     </div>
   );
