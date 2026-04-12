@@ -110,6 +110,8 @@ interface AppState {
   activeSettingsTab: 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance';
   isChannelDetailsOpen: boolean;
   channelDetailsTab: 'members' | 'settings';
+  isThreadOpen: boolean;
+  activeThreadId: string | null;
   isCallMinimized: boolean;
   isMuted: boolean;
   isCameraOff: boolean;
@@ -154,6 +156,7 @@ interface AppState {
   setExploreOpen: (isOpen: boolean) => void;
   setChannelDetailsOpen: (isOpen: boolean, tab?: AppState['channelDetailsTab']) => void;
   setChannelDetailsTab: (tab: AppState['channelDetailsTab']) => void;
+  setThreadOpen: (isOpen: boolean, threadId?: string | null) => void;
   setCallMinimized: (isMinimized: boolean) => void;
   setMuted: (isMuted: boolean) => void;
   setCameraOff: (isCameraOff: boolean) => void;
@@ -196,6 +199,8 @@ export const useAppStore = create<AppState>()(
       activeSettingsTab: 'security',
       isChannelDetailsOpen: false,
       channelDetailsTab: 'members',
+      isThreadOpen: false,
+      activeThreadId: null,
       isCallMinimized: false,
       isMuted: false,
       isCameraOff: true,
@@ -230,7 +235,12 @@ export const useAppStore = create<AppState>()(
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
-      setActiveRoomId: (id) => set({ activeRoomId: id }),
+      setActiveRoomId: (id) => set((state) => ({ 
+        activeRoomId: id,
+        // Close thread when changing rooms
+        isThreadOpen: state.activeRoomId !== id ? false : state.isThreadOpen,
+        activeThreadId: state.activeRoomId !== id ? null : state.activeThreadId
+      })),
       setActiveCall: (call) => set((state) => ({ 
         activeCall: call, 
         isCallMinimized: false, 
@@ -258,9 +268,17 @@ export const useAppStore = create<AppState>()(
       setExploreOpen: (isOpen) => set({ isExploreOpen: isOpen }),
       setChannelDetailsOpen: (isOpen, tab) => set((state) => ({ 
         isChannelDetailsOpen: isOpen,
-        channelDetailsTab: tab || state.channelDetailsTab
+        channelDetailsTab: tab || state.channelDetailsTab,
+        // Close thread if opening channel details
+        isThreadOpen: isOpen ? false : state.isThreadOpen
       })),
       setChannelDetailsTab: (tab) => set({ channelDetailsTab: tab }),
+      setThreadOpen: (isOpen, threadId) => set((state) => ({ 
+        isThreadOpen: isOpen, 
+        activeThreadId: threadId !== undefined ? threadId : state.activeThreadId,
+        // Close channel details if opening thread
+        isChannelDetailsOpen: isOpen ? false : state.isChannelDetailsOpen
+      })),
       setCallMinimized: (isMinimized) => set({ isCallMinimized: isMinimized }),
       setMuted: (isMuted) => set({ isMuted }),
       setCameraOff: (isCameraOff) => set({ isCameraOff }),

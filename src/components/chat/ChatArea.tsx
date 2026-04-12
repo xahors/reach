@@ -7,6 +7,7 @@ import { useGroupCall } from '../../hooks/useGroupCall';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import ChannelDetails from './ChannelDetails';
+import ThreadView from './ThreadView';
 import ActiveCall from '../calls/ActiveCall';
 import { EventType } from 'matrix-js-sdk';
 import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X, Volume2, Upload } from 'lucide-react';
@@ -61,6 +62,7 @@ const ChatArea: React.FC = () => {
     isChannelDetailsOpen, 
     setChannelDetailsOpen, 
     channelDetailsTab,
+    isThreadOpen,
     isCallMinimized, 
     setCallMinimized, 
     activeCall,
@@ -307,6 +309,10 @@ const ChatArea: React.FC = () => {
           <div className="w-60 animate-in slide-in-from-right duration-300 border-l border-border-main bg-bg-sidebar">
             <ChannelDetails />
           </div>
+        )}
+
+        {isThreadOpen && (
+          <ThreadView />
         )}
       </div>
     </div>

@@ -106,12 +106,24 @@ const SettingsModal: React.FC = () => {
         await crypto.bootstrapCrossSigning({ setupNewCrossSigning: false });
 
         setStatus('Restoring message backup...');
-        if (crypto.loadSessionBackupPrivateKeyFromSecretStorage) {
+        if (typeof crypto.loadSessionBackupPrivateKeyFromSecretStorage === 'function') {
             await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
         }
+        await crypto.restoreKeyBackup();
+
+        // CRITICAL: Retry decryption for the current session's timeline
+        if (client) {
+          setStatus('Success! Retrying decryption...');
+          // @ts-expect-error - Newer SDK feature
+          if (typeof client.retryDecryption === 'function') {
+            // @ts-expect-error - Newer SDK feature
+            client.retryDecryption();
+          }
+        }
       });
-      setStatus('Successfully restored E2EE keys.');
+      setStatus('Successfully restored E2EE keys. Messages will decrypt shortly.');
       setRecoveryKey('');
+      setTimeout(() => setStatus(''), 5000);
     } catch (err: unknown) {
       const error = err as Error;
       setStatus(`Error: ${error.message}`);

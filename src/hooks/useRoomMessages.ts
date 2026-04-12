@@ -137,8 +137,9 @@ export const useRoomMessages = (roomId: string | null) => {
         type === 'm.sticker'
       );      
       const isReplacement = event.isRelation('m.replace');
+      const isThreadReply = event.isRelation('m.thread');
       
-      return isDisplayable && !isReplacement;
+      return isDisplayable && !isReplacement && !isThreadReply;
     });
     
     filtered.sort((a, b) => a.getTs() - b.getTs());

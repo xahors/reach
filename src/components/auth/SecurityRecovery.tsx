@@ -100,8 +100,18 @@ const SecurityRecovery: React.FC = () => {
         }
         await crypto.restoreKeyBackup();
         
-        setStatus('Success!');
-        setNeedsRecovery(false);
+        // CRITICAL: Retry decryption for the current session's timeline
+        if (client) {
+          setStatus('Success! Retrying decryption...');
+          // @ts-expect-error - Newer SDK feature
+          if (typeof client.retryDecryption === 'function') {
+            // @ts-expect-error - Newer SDK feature
+            client.retryDecryption();
+          }
+        }
+
+        setStatus('Success! Messages will decrypt shortly.');
+        setTimeout(() => setNeedsRecovery(false), 2000);
       });
     } catch (err) {
       console.error(err);

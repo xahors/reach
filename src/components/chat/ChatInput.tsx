@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MsgType, RelationType } from 'matrix-js-sdk';
+import { MsgType, RelationType, type IEventRelation } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
 import { PlusCircle, StickyNote, Smile, ShieldAlert, X, Reply, Pencil, Loader2 } from 'lucide-react';
@@ -11,9 +11,25 @@ import { useFileUpload } from '../../hooks/useFileUpload';
 interface ChatInputProps {
   roomId: string;
   roomName: string;
+  threadId?: string | null;
 }
 
-const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
+// Custom interface for message content to satisfy SDK and linter
+interface IMessageContent {
+  msgtype: string;
+  body: string;
+  url?: string;
+  info?: Record<string, unknown>;
+  "m.new_content"?: {
+    msgtype: string;
+    body: string;
+  };
+  "m.relates_to"?: IEventRelation & {
+    is_falling_back?: boolean;
+  };
+}
+
+const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null }) => {
   const [message, setMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
@@ -43,8 +59,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
     if (editingEvent) {
       const originalBody = editingEvent.getContent().body;
       if (message.trim() !== originalBody) {
-        // cast to any is necessary due to complex matrix-js-sdk types for message content
-        const content = {
+        const content: IMessageContent = {
           "m.new_content": {
             "msgtype": MsgType.Text,
             "body": message
@@ -56,27 +71,37 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
           "msgtype": MsgType.Text,
           "body": ` * ${message}`
         };
+        // Use unknown to any cast only where strictly necessary for SDK interaction
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        client.sendMessage(roomId, content as any);
+        client.sendMessage(roomId, threadId, content as any);
       }
       setEditingEvent(null);
     } else {
-      const content: Record<string, unknown> = {
+      const content: IMessageContent = {
         msgtype: MsgType.Text,
         body: message,
       };
 
-      if (replyingToEvent) {
+      if (threadId) {
+        content['m.relates_to'] = {
+          rel_type: RelationType.Thread,
+          event_id: threadId,
+          'm.in_reply_to': {
+            event_id: replyingToEvent ? replyingToEvent.getId()! : threadId,
+          },
+          is_falling_back: !replyingToEvent
+        };
+      } else if (replyingToEvent) {
         content['m.relates_to'] = {
           'm.in_reply_to': {
-            event_id: replyingToEvent.getId(),
+            event_id: replyingToEvent.getId()!,
           },
         };
-        setReplyingToEvent(null);
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      client.sendMessage(roomId, content as any);
+      client.sendMessage(roomId, threadId, content as any);
+      setReplyingToEvent(null);
     }
     
     setMessage('');
@@ -104,7 +129,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
   const handleStickerClick = useCallback((sticker: Sticker) => {
     if (!client) return;
     
-    const content = {
+    const content: IMessageContent = {
       msgtype: 'm.sticker',
       body: sticker.body,
       url: sticker.url,
@@ -115,15 +140,26 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         size: sticker.info?.size,
       }
     };
+
+    if (threadId) {
+      content['m.relates_to'] = {
+        rel_type: RelationType.Thread,
+        event_id: threadId,
+        'm.in_reply_to': {
+          event_id: threadId
+        }
+      };
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    client.sendMessage(roomId, content as any);
+    client.sendMessage(roomId, threadId, content as any);
     setShowStickerPicker(false);
-  }, [client, roomId]);
+  }, [client, roomId, threadId]);
 
   const isEncrypted = client?.isRoomEncrypted(roomId);
 
   return (
-    <div className="px-4 pb-6 bg-bg-main">
+    <div className={`px-4 pb-6 ${threadId ? 'bg-bg-sidebar' : 'bg-bg-main'}`}>
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -162,20 +198,22 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
         onSubmit={handleSubmit}
         className={`flex items-center rounded-lg bg-bg-nav px-4 py-2 border border-border-main transition-all ${editingEvent ? 'rounded-t-none border-accent-primary/30 shadow-[0_0_15px_rgba(255,255,255,0.05)]' : replyingToEvent ? 'rounded-t-none' : 'focus-within:border-accent-primary/50 shadow-sm'}`}
       >
-        <button 
-          type="button" 
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isUploading}
-          className="mr-4 text-text-muted hover:text-accent-primary transition disabled:opacity-50 relative"
-          title="Share a file"
-        >
-          {isUploading ? (
-            <div className="relative flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="absolute text-[8px] font-bold">{uploadProgress}%</span>
-            </div>
-          ) : <PlusCircle className="h-6 w-6" />}
-        </button>
+        {!threadId && (
+          <button 
+            type="button" 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="mr-4 text-text-muted hover:text-accent-primary transition disabled:opacity-50 relative"
+            title="Share a file"
+          >
+            {isUploading ? (
+              <div className="relative flex items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span className="absolute text-[8px] font-bold">{uploadProgress}%</span>
+              </div>
+            ) : <PlusCircle className="h-6 w-6" />}
+          </button>
+        )}
         
         <div className="flex flex-1 flex-col">
           <input
@@ -183,7 +221,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder={editingEvent ? "Save changes..." : `Message #${roomName}`}
+            placeholder={editingEvent ? "Save changes..." : threadId ? "Reply to thread..." : `Message #${roomName}`}
             className="bg-transparent py-1 text-sm text-text-main outline-none placeholder:text-text-muted/50 font-medium"
           />
           {isEncrypted && (
@@ -240,4 +278,3 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName }) => {
 };
 
 export default ChatInput;
-
