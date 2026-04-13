@@ -4,7 +4,7 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { X, MessageSquare, Loader2 } from 'lucide-react';
 import MessageItem from './MessageItem';
 import ChatInput from './ChatInput';
-import { ThreadEvent, type MatrixEvent, type Thread, RoomEvent } from 'matrix-js-sdk';
+import { ThreadEvent, type MatrixEvent, type Thread, RoomEvent, MatrixEventEvent } from 'matrix-js-sdk';
 
 const ThreadView: React.FC = () => {
   const { activeThreadId, activeRoomId, setThreadOpen } = useAppStore();
@@ -15,8 +15,10 @@ const ThreadView: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const updateMessages = useCallback((t: Thread) => {
-    console.log(`Updating messages for thread ${t.id}, count: ${t.events.length}`);
-    setMessages([...t.events]);
+    // thread.events returns messages from oldest to newest
+    const evs = t.events;
+    console.log(`Syncing thread ${t.id}, count: ${evs.length}`);
+    setMessages([...evs]);
   }, []);
 
   useEffect(() => {
@@ -26,56 +28,49 @@ const ThreadView: React.FC = () => {
     if (!room) return;
 
     let active = true;
+    const trackedEvents = new Set<string>();
 
     const initThread = async () => {
       setLoading(true);
       
       try {
-        // 1. Find root event
-        const root = room.findEventById(activeThreadId) || room.getThread(activeThreadId)?.rootEvent;
+        // 1. Find or fetch root event
+        let root = room.findEventById(activeThreadId);
+        if (!root) {
+           try {
+             const rawEvent = await client.fetchRoomEvent(activeRoomId, activeThreadId);
+             root = client.getEventMapper()(rawEvent);
+           } catch (e) {
+             console.warn("Failed to fetch root event:", e);
+           }
+        }
         if (active) setRootEvent(root || null);
 
-        if (!root) {
-           console.warn(`Root event ${activeThreadId} not found in room memory.`);
-        }
-
-        // 2. Get or create thread object
+        // 2. Get/Nudge thread object
         let thread = room.getThread(activeThreadId);
         
-        // If SDK hasn't created a thread object, we might need to nudge it
-        if (!thread && root) {
-           console.log(`Creating thread object for ${activeThreadId}...`);
-           thread = room.createThread(activeThreadId, root, [], true);
-        }
-
-        if (!thread) {
-          console.warn(`Thread object could not be initialized for ${activeThreadId}`);
-          if (active) {
-            setMessages([]);
-            setLoading(false);
-          }
-          return;
-        }
-
-        if (active) updateMessages(thread);
-
-        // 3. Fetch initial events if needed
-        const threadInternals = thread as unknown as { initialEventsFetched?: boolean; fetchNextBatch?: () => Promise<void> };
+        // 3. Fetch history
+        const threadInternals = thread as unknown as { initialEventsFetched?: boolean };
         
-        if (!threadInternals.initialEventsFetched) {
-          console.log(`Fetching initial events for thread ${activeThreadId}...`);
-          if (typeof threadInternals.fetchNextBatch === 'function') {
-            await threadInternals.fetchNextBatch();
-          } else {
-            // Fallback: manually fetch relations if SDK thread object is empty
-            const result = await client.relations(activeRoomId, activeThreadId, 'm.thread', undefined, { limit: 50 });
-            console.log(`Manually fetched ${result.events.length} thread relations`);
-            
-            // If the thread object didn't pick them up, update local state
-            if (active && thread.events.length === 0) {
-              setMessages(result.events);
-            }
+        if (!thread || !threadInternals.initialEventsFetched) {
+          console.log(`Fetching thread history for ${activeThreadId}...`);
+          const result = await client.relations(activeRoomId, activeThreadId, 'm.thread', undefined, { limit: 50 });
+          
+          // CRITICAL: Feed events to room to trigger SDK internal aggregation
+          room.processThreadedEvents(result.events, true);
+          
+          thread = room.getThread(activeThreadId);
+          
+          // If SDK still hasn't created a thread object, use relations directly
+          if (active && (!thread || thread.events.length === 0)) {
+            // Ensure chronological order (relations are often newest first)
+            const sorted = [...result.events].sort((a, b) => a.getTs() - b.getTs());
+            setMessages(sorted);
           }
+        }
+
+        if (thread && active) {
+          updateMessages(thread);
         }
       } catch (err) {
         console.error("Error initializing thread:", err);
@@ -90,17 +85,36 @@ const ThreadView: React.FC = () => {
       }
     };
 
-    const onTimeline = (ev: MatrixEvent) => {
+    const onRoomTimeline = (ev: MatrixEvent) => {
       const relation = ev.getRelation();
       if (relation?.rel_type === 'm.thread' && relation?.event_id === activeThreadId && active) {
+        console.log("New thread reply detected in room timeline.");
         const t = room.getThread(activeThreadId);
-        if (t) updateMessages(t);
+        if (t) {
+          updateMessages(t);
+        } else {
+          // If no thread object yet, add to local state manually
+          setMessages(prev => {
+            if (prev.some(m => m.getId() === ev.getId())) return prev;
+            return [...prev, ev].sort((a, b) => a.getTs() - b.getTs());
+          });
+        }
+
+        // Handle decryption if needed
+        if (ev.isEncrypted() && !trackedEvents.has(ev.getId()!)) {
+          const onDecrypted = () => {
+            const updatedThread = room.getThread(activeThreadId);
+            if (updatedThread) updateMessages(updatedThread);
+          };
+          ev.once(MatrixEventEvent.Decrypted, onDecrypted);
+          trackedEvents.add(ev.getId()!);
+        }
       }
     };
 
     room.on(ThreadEvent.Update, onThreadUpdate);
     room.on(ThreadEvent.NewReply, onThreadUpdate);
-    room.on(RoomEvent.Timeline, onTimeline);
+    room.on(RoomEvent.Timeline, onRoomTimeline);
 
     initThread();
 
@@ -108,7 +122,7 @@ const ThreadView: React.FC = () => {
       active = false;
       room.removeListener(ThreadEvent.Update, onThreadUpdate);
       room.removeListener(ThreadEvent.NewReply, onThreadUpdate);
-      room.removeListener(RoomEvent.Timeline, onTimeline);
+      room.removeListener(RoomEvent.Timeline, onRoomTimeline);
     };
   }, [client, activeRoomId, activeThreadId, updateMessages]);
 
@@ -117,7 +131,7 @@ const ThreadView: React.FC = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, loading]);
 
   if (!activeThreadId) return null;
 
@@ -139,41 +153,41 @@ const ThreadView: React.FC = () => {
         </button>
       </div>
 
-      {/* Thread Content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar">
-        {loading ? (
-          <div className="flex h-20 items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-accent-primary" />
-          </div>
-        ) : (
-          <div className="py-4">
-            {/* Root Message */}
-            {rootEvent && (
-              <div className="border-b border-border-main/50 pb-4 mb-4">
-                <div className="px-4 mb-2 text-[10px] font-black uppercase text-text-muted tracking-widest">Thread Start</div>
-                <MessageItem event={rootEvent} isThreadRoot={true} />
+      {/* Thread Content - Oldest at top, Newest at bottom */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
+        <div className="flex flex-col min-h-full">
+          {/* Root Message */}
+          {rootEvent && (
+            <div className="border-b border-border-main/50 pb-4 mb-4">
+              <div className="px-4 mb-2 text-[10px] font-black uppercase text-text-muted tracking-widest">Thread Start</div>
+              <MessageItem event={rootEvent} isThreadRoot={true} isThread={true} />
+            </div>
+          )}
+
+          {/* Replies */}
+          <div className="space-y-1 pb-4 flex-1">
+            {messages.map((msg, idx) => (
+              <MessageItem 
+                key={msg.getId() || msg.getTxnId() || idx} 
+                event={msg} 
+                isContinuation={idx > 0 && messages[idx-1].getSender() === msg.getSender()}
+                isThread={true}
+              />
+            ))}
+            
+            {loading && messages.length === 0 && (
+              <div className="flex h-20 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-accent-primary" />
               </div>
             )}
-
-            {/* Replies */}
-            <div className="space-y-1">
-              {messages.length === 0 ? (
-                <div className="px-4 py-8 text-center text-xs text-text-muted italic">
-                  No replies yet
-                </div>
-              ) : (
-                messages.map((msg, idx) => (
-                  <MessageItem 
-                    key={msg.getId() || msg.getTxnId() || idx} 
-                    event={msg} 
-                    isContinuation={idx > 0 && messages[idx-1].getSender() === msg.getSender()}
-                    isThreadRoot={true}
-                  />
-                ))
-              )}
-            </div>
+            
+            {!loading && messages.length === 0 && (
+              <div className="px-4 py-8 text-center text-xs text-text-muted italic">
+                No replies yet
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Thread Input */}

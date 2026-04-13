@@ -13,6 +13,7 @@ interface MessageItemProps {
   isContinuation?: boolean;
   onJumpToEvent?: (id: string) => void;
   isThreadRoot?: boolean;
+  isThread?: boolean;
 }
 
 /**
@@ -30,7 +31,13 @@ interface IMatrixRoom {
   };
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false, onJumpToEvent, isThreadRoot = false }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ 
+  event, 
+  isContinuation = false, 
+  onJumpToEvent, 
+  isThreadRoot = false,
+  isThread = false
+}) => {
   const client = useMatrixClient();
   const { userId, setEditingEvent, setReplyingToEvent, setThreadOpen } = useAppStore();
   const sender = event.sender;
@@ -106,20 +113,41 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
     const room = client.getRoom(event.getRoomId());
     if (!room) return;
 
-    const thread = room.getThread(event.getId()!);
+    const eventId = event.getId();
+    if (!eventId) return;
+
+    // 1. Try to get from SDK Thread object
+    const thread = room.getThread(eventId);
     if (thread) {
       setThreadReplyCount(thread.length);
       // @ts-expect-error - internal thread property access
       setLatestReply(thread.replyEvent || thread.events[thread.events.length - 1] || null);
+      return;
+    }
+
+    // 2. Fallback: Check relations manually if thread object isn't aggregated yet
+    const threadRelations = (room as unknown as IMatrixRoom).relations?.getChildEventsForEvent(
+      eventId,
+      RelationType.Thread,
+      EventType.RoomMessage
+    );
+
+    if (threadRelations) {
+      const rels = threadRelations.getRelations();
+      if (rels.length > 0) {
+        setThreadReplyCount(rels.length);
+        setLatestReply(rels[rels.length - 1]);
+      }
     }
   }, [client, event]);
 
   useEffect(() => {
     if (!client || isRedacted) return;
     
+    // Defer initial data fetching to avoid synchronous setState in render
     const timer = setTimeout(() => {
       updateReactions();
-      if (!isThreadRoot) updateThreadInfo();
+      if (!isThreadRoot && !isThread) updateThreadInfo();
     }, 0);
 
     const room = client.getRoom(event.getRoomId());
@@ -127,8 +155,12 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
     
     const onTimeline = (rel: MatrixEvent) => {
       const relation = rel.getRelation();
-      if (relation && relation.event_id === eventId && relation.rel_type === RelationType.Annotation) {
-        updateReactions();
+      if (relation && relation.event_id === eventId) {
+        if (relation.rel_type === RelationType.Annotation) {
+          updateReactions();
+        } else if (relation.rel_type === RelationType.Thread) {
+          updateThreadInfo();
+        }
       }
     };
 
@@ -136,8 +168,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
         const redactedId = redactedEvent.getAssociatedId() || redactedEvent.getContent().redacts;
         if (redactedId === eventId) {
             updateReactions();
-        } else {
-            updateReactions();
+            updateThreadInfo();
         }
     };
 
@@ -166,11 +197,12 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
       room?.removeListener(ThreadEvent.NewReply, onThreadUpdate);
       event.removeListener(MatrixEventEvent.Decrypted, onDecrypted);
     };
-  }, [client, event, isRedacted, updateReactions, updateThreadInfo, isThreadRoot, forceUpdate]);
+  }, [client, event, isRedacted, updateReactions, updateThreadInfo, isThreadRoot, isThread, forceUpdate]);
 
   useEffect(() => {
     if (showEmojiPicker && actionButtonRef.current) {
       const rect = actionButtonRef.current.getBoundingClientRect();
+      // Defer to avoid cascading renders
       const timer = setTimeout(() => {
         if (rect.top < 450) {
           setPickerDirection('down');
@@ -458,7 +490,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
             <div 
               ref={emojiPickerRef} 
               className={cn(
-                "absolute right-0 z-50 animate-in fade-in zoom-in-95 duration-100 shadow-2xl",
+                "absolute z-50 animate-in fade-in zoom-in-95 duration-100 shadow-2xl",
+                isThread ? "right-0" : "right-0",
                 pickerDirection === 'up' ? "bottom-full mb-2" : "top-full mt-2"
               )}
             >
@@ -467,11 +500,13 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
                 theme={Theme.DARK}
                 autoFocusSearch={false}
                 lazyLoadEmojis={true}
+                width={isThread ? 280 : 350}
+                height={400}
               />
             </div>
           )}
         </div>
-        {!isThreadRoot && (
+        {!isThreadRoot && !isThread && (
           <button 
             onClick={() => setThreadOpen(true, event.getId())}
             className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-white rounded transition" 
@@ -537,7 +572,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
           </div>
         )}
 
-        {isReply && replyEvent && (
+        {isReply && replyEvent && !isThread && (
           <div 
             onClick={() => onJumpToEvent?.(replyEventId!)}
             className="mb-1 flex items-center space-x-2 rounded bg-bg-nav/40 p-1.5 border-l-2 border-accent-primary/30 cursor-pointer hover:bg-bg-nav transition"
@@ -594,7 +629,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ event, isContinuation = false
           )}
 
           {/* Thread Summary */}
-          {!isThreadRoot && threadReplyCount > 0 && (
+          {!isThreadRoot && !isThread && threadReplyCount > 0 && (
             <button 
               onClick={() => setThreadOpen(true, event.getId())}
               className="mt-2 flex items-center space-x-2 group/thread w-full max-w-sm rounded-lg border border-border-main bg-bg-nav/30 p-2 transition hover:bg-bg-nav/50 hover:border-accent-primary/30"
