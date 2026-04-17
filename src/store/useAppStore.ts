@@ -185,6 +185,7 @@ interface AppState {
     mentionsOnly: boolean;
   };
   roomNotificationSettings: Record<string, 'all' | 'mentions' | 'mute'>;
+  highlightedEventId: string | null;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
   setActiveSpaceId: (id: string | null) => void;
@@ -222,6 +223,7 @@ interface AppState {
   setMediaPreview: (preview: AppState['mediaPreview']) => void;
   setGlobalNotificationSettings: (settings: Partial<AppState['globalNotificationSettings']>) => void;
   setRoomNotificationSetting: (roomId: string, setting: AppState['roomNotificationSettings'][string]) => void;
+  setHighlightedEventId: (id: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -275,6 +277,7 @@ export const useAppStore = create<AppState>()(
         mentionsOnly: false,
       },
       roomNotificationSettings: {},
+      highlightedEventId: null,
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
@@ -380,6 +383,7 @@ export const useAppStore = create<AppState>()(
       setRoomNotificationSetting: (roomId, setting) => set((state) => ({
         roomNotificationSettings: { ...state.roomNotificationSettings, [roomId]: setting }
       })),
+      setHighlightedEventId: (id) => set({ highlightedEventId: id }),
     }),
     {
       name: 'reach-app-storage',

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
+import { useAppStore } from '../../store/useAppStore';
 import { Hash, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 
 interface MessageListProps {
@@ -30,11 +31,26 @@ const MessageList: React.FC<MessageListProps> = ({
   readMarkerId
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { highlightedEventId, setHighlightedEventId } = useAppStore();
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(!canPaginateForward);
   const prevMessagesLength = useRef(messages.length);
   const prevRoomId = useRef(roomId);
   const client = useMatrixClient();
   const room = client?.getRoom(roomId);
+
+  useEffect(() => {
+    if (highlightedEventId) {
+      const element = document.getElementById(`message-${highlightedEventId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Clear highlight after a few seconds
+        const timer = setTimeout(() => {
+          setHighlightedEventId(null);
+        }, 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [highlightedEventId, messages, setHighlightedEventId]);
 
   const scrollToBottom = () => {
     if (scrollRef.current) {

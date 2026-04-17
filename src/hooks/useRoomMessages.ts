@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, PendingEventOrdering, EventTimelineSet } from 'matrix-js-sdk';
+import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, PendingEventOrdering, EventTimelineSet, RelationType } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
 import { useAppStore } from '../store/useAppStore';
@@ -7,7 +7,7 @@ import { timelineManager } from '../core/timelineManager';
 
 export const useRoomMessages = (roomId: string | null) => {
   const client = useMatrixClient();
-  const { messageLoadPolicy, sendReadReceipts } = useAppStore();
+  const { messageLoadPolicy, sendReadReceipts, setThreadOpen, setHighlightedEventId } = useAppStore();
   const [readMarkerId, setReadMarkerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,6 +63,21 @@ export const useRoomMessages = (roomId: string | null) => {
   }, [client, roomId]);
 
   const jumpToEvent = useCallback(async (eventId: string) => {
+    if (!client || !roomId) return;
+    const room = client.getRoom(roomId);
+    if (!room) return;
+
+    // Check if this event is part of a thread
+    const event = room.findEventById(eventId) || client.getEventMapper()({ event_id: eventId });
+    const threadRootId = event?.isRelation(RelationType.Thread) ? event.threadRootId : null;
+
+    if (threadRootId) {
+      // It's a thread message - open thread view instead of main timeline
+      setThreadOpen(true, threadRootId);
+      setHighlightedEventId(eventId);
+      return;
+    }
+
     if (!timelineWindow.current) return;
 
     setLoading(true);
@@ -74,7 +89,7 @@ export const useRoomMessages = (roomId: string | null) => {
     } finally {
       setLoading(false);
     }
-  }, [refreshMessages]);
+  }, [client, roomId, refreshMessages, setThreadOpen, setHighlightedEventId]);
 
   // Effect to manage read markers
   useEffect(() => {

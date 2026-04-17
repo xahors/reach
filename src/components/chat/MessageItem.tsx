@@ -4,11 +4,12 @@ import { MatrixEvent, EventStatus, RelationType, RoomEvent, EventType, ThreadEve
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
 import { useAppStore } from '../../store/useAppStore';
-import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings, Smile, MessageSquare, Lock, AlertCircle } from 'lucide-react';
+import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings, Smile, MessageSquare, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { UrlPreview } from './UrlPreview';
 import { DecryptedMedia } from './DecryptedMedia';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
+import { usePinnedEvents } from '../../hooks/usePinnedEvents';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -41,7 +42,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
   isThread = false
 }) => {
   const client = useMatrixClient();
-  const { userId, setEditingEvent, setReplyingToEvent, setThreadOpen, themeConfig } = useAppStore();
+  const { userId, setEditingEvent, setReplyingToEvent, setThreadOpen, themeConfig, highlightedEventId } = useAppStore();
+  const { pinEvent, unpinEvent, isEventPinned, loading: pinLoading } = usePinnedEvents(event.getRoomId() || null);
   const sender = event.sender;
   const isRedacted = event.isRedacted();
   const status = event.status;
@@ -416,9 +418,17 @@ const MessageItem: React.FC<MessageItemProps> = ({
       text = `${senderName} changed the permissions for this room`;
     }
 
+    const isHighlighted = highlightedEventId === event.getId();
+
     if (text) {
       return (
-        <div className="group relative flex items-center px-4 py-0.5 hover:bg-bg-hover/30 transition-colors border-l-2 border-transparent hover:border-border-main">
+        <div 
+          id={"message-" + event.getId()}
+          className={cn(
+            "group relative flex items-center px-4 py-0.5 transition-all border-l-2 border-transparent hover:border-border-main",
+            isHighlighted ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/30"
+          )}
+        >
           <div className="mr-4 flex h-8 w-8 shrink-0 items-center justify-center">
             {icon}
           </div>
@@ -447,8 +457,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
        callText = 'Answered the call';
     }
 
+    const isHighlighted = highlightedEventId === event.getId();
+
     return (
-      <div className="group relative mt-2 flex px-4 py-3 hover:bg-bg-hover transition items-center border border-border-main/50 rounded-xl mx-4 bg-bg-nav/20">
+      <div 
+        id={"message-" + event.getId()}
+        className={cn(
+          "group relative mt-2 flex px-4 py-3 transition-all border border-border-main/50 rounded-xl mx-4",
+          isHighlighted ? "bg-accent-primary/20 border-accent-primary animate-pulse duration-1000" : "bg-bg-nav/20 hover:bg-bg-hover"
+        )}
+      >
         <div className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-nav border border-border-main">
           {callIcon}
         </div>
@@ -550,15 +568,18 @@ const MessageItem: React.FC<MessageItemProps> = ({
       return part;
     });
   };
+const isHighlighted = highlightedEventId === event.getId();
 
   return (
-    <div 
-      className={cn(
-        "group relative flex px-4 transition-colors hover:bg-bg-hover/20 border-l-2 border-transparent hover:border-accent-primary/20",
-        isContinuation ? "py-0.5" : "mt-4 py-1",
-        isEdited && "bg-accent-primary/5 border-l-accent-primary/30"
-      )}
+    <div
+      id={"message-" + event.getId()}
       onMouseLeave={() => setShowEmojiPicker(false)}
+      className={cn(
+        "group relative flex px-4 transition-all border-l-2 border-transparent",
+        isContinuation ? "py-0.5" : "mt-4 py-1",
+        isEdited && "bg-accent-primary/5 border-l-accent-primary/30",
+        isHighlighted ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/20 hover:border-accent-primary/20"
+      )}
     >
       {/* Context Actions */}
       <div className="absolute -top-4 right-4 z-10 flex items-center space-x-0.5 rounded-lg bg-bg-sidebar border border-border-main p-0.5 opacity-0 shadow-xl group-hover:opacity-100 transition-all duration-100">
@@ -635,8 +656,21 @@ const MessageItem: React.FC<MessageItemProps> = ({
             <Pencil className="h-4 w-4" />
           </button>
         )}
-        <button className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-white rounded transition" title="Pin">
-          <Pin className="h-4 w-4" />
+        <button 
+          disabled={pinLoading}
+          onClick={() => isEventPinned(event.getId() || '') ? unpinEvent(event.getId()!) : pinEvent(event.getId()!)}
+          className={cn(
+            "p-1.5 rounded transition",
+            isEventPinned(event.getId() || '') ? "text-accent-primary bg-accent-primary/10 shadow-sm" : "text-text-muted hover:bg-bg-hover hover:text-white",
+            pinLoading && "opacity-50 cursor-not-allowed"
+          )} 
+          title={isEventPinned(event.getId() || '') ? "Unpin" : "Pin"}
+        >
+          {pinLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Pin className={cn("h-4 w-4", isEventPinned(event.getId() || '') && "fill-current")} />
+          )}
         </button>
         <button className="p-1.5 text-red-400 hover:bg-red-500/20 rounded transition" title="Delete">
           <Trash2 className="h-4 w-4" />

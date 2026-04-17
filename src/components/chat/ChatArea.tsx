@@ -10,9 +10,11 @@ import ChannelDetails from './ChannelDetails';
 import ThreadView from './ThreadView';
 import ActiveCall from '../calls/ActiveCall';
 import { EventType } from 'matrix-js-sdk';
-import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, Volume2, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X, Volume2, Upload, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 import { useFileUpload } from '../../hooks/useFileUpload';
+import { useSearch, type SearchResult } from '../../hooks/useSearch';
+
 
 const PinnedMessages: React.FC<{ roomId: string, onJumpToEvent: (id: string) => void }> = ({ roomId, onJumpToEvent }) => {
   const { pinnedEventIds } = usePinnedEvents(roomId);
@@ -78,10 +80,77 @@ const PinnedMessages: React.FC<{ roomId: string, onJumpToEvent: (id: string) => 
   );
 };
 
+const SearchResults: React.FC<{ 
+  results: SearchResult[], 
+  isSearching: boolean, 
+  onClose: () => void,
+  onJumpToEvent: (roomId: string, eventId: string) => void 
+}> = ({ results, isSearching, onClose, onJumpToEvent }) => {
+  return (
+    <div className="absolute right-4 top-14 z-[60] w-96 max-h-[70vh] flex flex-col rounded-2xl border border-border-main bg-bg-sidebar shadow-2xl animate-in slide-in-from-top-2 duration-300">
+      <div className="flex items-center justify-between border-b border-border-main p-4">
+        <h3 className="text-xs font-black uppercase tracking-widest text-white italic">Search Results</h3>
+        <button onClick={onClose} className="text-text-muted hover:text-white">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
+        {isSearching ? (
+          <div className="flex flex-col items-center justify-center py-12 text-text-muted">
+            <Loader2 className="mb-4 h-8 w-8 animate-spin text-accent-primary" />
+            <p className="text-[10px] font-bold uppercase tracking-widest">Searching local history...</p>
+          </div>
+        ) : results.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-text-muted">
+            <Search className="mb-4 h-8 w-8 opacity-20" />
+            <p className="text-[10px] font-bold uppercase tracking-widest">No results found</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {results.map((result, idx) => (
+              <div 
+                key={`${result.event.getId()}-${idx}`}
+                onClick={() => onJumpToEvent(result.event.getRoomId()!, result.event.getId()!)}
+                className="group cursor-pointer rounded-xl bg-bg-nav/50 p-3 border border-transparent hover:border-accent-primary/30 hover:bg-bg-hover transition-all"
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-accent-primary tracking-tighter truncate max-w-[150px]">
+                    {result.roomName}
+                  </span>
+                  <span className="text-[9px] font-mono text-text-muted">
+                    {new Date(result.event.getTs()).toLocaleDateString()}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 mb-1 min-w-0">
+                  <span className="text-xs font-bold text-white shrink-0">
+                    {result.event.sender?.name || result.event.getSender()}:
+                  </span>
+                  <span className="text-xs text-text-main truncate italic flex-1">
+                    {result.event.getContent().body}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      <div className="border-t border-border-main p-3 bg-bg-main/30">
+        <p className="text-[9px] font-bold text-text-muted uppercase tracking-tighter leading-relaxed">
+          Tip: Use <span className="text-accent-primary">user:</span>, <span className="text-accent-primary">room:</span>, or <span className="text-accent-primary">date:</span> filters
+        </p>
+      </div>
+    </div>
+  );
+};
+
 
 const ChatArea: React.FC = () => {
   const { 
     activeRoomId, 
+    setActiveRoomId,
+    setHighlightedEventId,
     isChannelDetailsOpen, 
     setChannelDetailsOpen, 
     channelDetailsTab,
@@ -100,8 +169,34 @@ const ChatArea: React.FC = () => {
   const roomId = activeRoomId;
   const { messages, loading, paginate, canPaginate, canPaginateForward, markAsRead, readMarkerId, jumpToEvent, jumpToLive } = useRoomMessages(roomId);
   const { hasGroupCall, participantCount, isCallActive } = useGroupCall(roomId);
+  const { results, isSearching, performSearch } = useSearch();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const { uploadFile } = useFileUpload(client, activeRoomId || '');
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      setIsSearchOpen(true);
+      performSearch(searchQuery);
+    }
+  };
+
+  const handleJumpToSearchResult = (targetRoomId: string, eventId: string) => {
+    setHighlightedEventId(eventId);
+    if (targetRoomId !== activeRoomId) {
+      setActiveRoomId(targetRoomId);
+      // Wait for room switch to stabilize
+      setTimeout(() => {
+        jumpToEvent(eventId);
+        setIsSearchOpen(false);
+      }, 300);
+    } else {
+      jumpToEvent(eventId);
+      setIsSearchOpen(false);
+    }
+  };
 
   const handleFilesDrop = useCallback(async (files: File[]) => {
     for (const file of files) {
@@ -252,23 +347,34 @@ const ChatArea: React.FC = () => {
             onClick={() => setChannelDetailsOpen(!(isChannelDetailsOpen && channelDetailsTab === 'settings'), 'settings')}
           />
           <Pin className="h-5 w-5 cursor-pointer hover:text-text-main" />
-          <Users 
-            className={`h-5 w-5 cursor-pointer transition-colors ${isChannelDetailsOpen && channelDetailsTab === 'members' ? 'text-accent-primary' : 'hover:text-text-main'}`}
+          <div className={`h-5 w-5 cursor-pointer transition-colors ${isChannelDetailsOpen && channelDetailsTab === 'members' ? 'text-accent-primary' : 'hover:text-text-main'}`}
             onClick={() => setChannelDetailsOpen(!(isChannelDetailsOpen && channelDetailsTab === 'members'), 'members')}
-          />
-          <div className="relative hidden md:flex items-center">
+          >
+             <Users className="h-full w-full" />
+          </div>
+          <form onSubmit={handleSearch} className="relative hidden md:flex items-center">
             <input 
               type="text" 
-              placeholder="Search" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search history..." 
               className="h-7 w-32 rounded bg-bg-nav px-2 py-1 text-[10px] text-text-main outline-none focus:w-48 transition-all duration-300 border border-border-main focus:border-accent-primary font-mono"
             />
             <Search className="absolute right-2 h-3 w-3" />
-          </div>
+          </form>
           <HelpCircle className="h-5 w-5 cursor-pointer hover:text-text-main" />
         </div>
       </header>
 
       {activeRoomId && <PinnedMessages roomId={activeRoomId} onJumpToEvent={jumpToEvent} />}
+      {isSearchOpen && (
+        <SearchResults 
+          results={results} 
+          isSearching={isSearching} 
+          onClose={() => setIsSearchOpen(false)}
+          onJumpToEvent={handleJumpToSearchResult}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden relative" 
         onDragOver={(e) => {
