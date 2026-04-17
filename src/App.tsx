@@ -89,7 +89,6 @@ function MainApp() {
       <Sidebar />
       <ChannelList />
       <ChatArea />
-      <SecurityRecovery />
       {callWindowingMode !== 'integrated' && <ActiveCall />}
       <SettingsModal />
       <ExploreModal />
@@ -172,6 +171,7 @@ function App() {
   return (
     <ErrorBoundary>
       <MainApp />
+      <SecurityRecovery />
     </ErrorBoundary>
   );
 }

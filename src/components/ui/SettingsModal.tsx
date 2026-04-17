@@ -24,6 +24,8 @@ const SettingsModal: React.FC = () => {
     setThemeConfig,
     showUrlPreviews,
     setShowUrlPreviews,
+    sendReadReceipts,
+    setSendReadReceipts,
     userPresence,
     setUserPresence,
     globalNotificationSettings,
@@ -247,6 +249,19 @@ const SettingsModal: React.FC = () => {
                         className={`h-5 w-10 rounded-full p-1 cursor-pointer transition-colors ${showUrlPreviews ? 'bg-accent-primary' : 'bg-bg-hover'}`}
                       >
                         <div className={`h-3 w-3 rounded-full bg-white transition-transform ${showUrlPreviews ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-xl bg-bg-nav p-4 border border-transparent hover:border-border-main transition">
+                      <div>
+                        <p className="text-sm font-bold text-text-main">Read Receipts</p>
+                        <p className="text-xs text-text-muted">Let others know when you have read their messages</p>
+                      </div>
+                      <div 
+                        onClick={() => setSendReadReceipts(!sendReadReceipts)}
+                        className={`h-5 w-10 rounded-full p-1 cursor-pointer transition-colors ${sendReadReceipts ? 'bg-accent-primary' : 'bg-bg-hover'}`}
+                      >
+                        <div className={`h-3 w-3 rounded-full bg-white transition-transform ${sendReadReceipts ? 'translate-x-5' : 'translate-x-0'}`} />
                       </div>
                     </div>
                   </div>

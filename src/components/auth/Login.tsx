@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { matrixService } from '../../core/matrix';
 import { useAppStore } from '../../store/useAppStore';
 import { callManager } from '../../core/callManager';
-import { LogIn, Loader2, Globe, User, Lock, MessageSquare } from 'lucide-react';
+import { LogIn, Loader2, Globe, User, Lock, MessageSquare, GitBranch } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [homeserver, setHomeserver] = useState('https://matrix.org');
@@ -39,7 +39,6 @@ const Login: React.FC = () => {
             <MessageSquare className="h-10 w-10 text-accent-primary" />
           </div>
           <h1 className="text-4xl font-black tracking-tighter text-white uppercase italic">Reach</h1>
-          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-text-muted opacity-60">High-Performance Matrix Client</p>
         </div>
 
         <div className="rounded-2xl border border-border-main bg-bg-nav/30 p-8 shadow-2xl backdrop-blur-sm">
@@ -115,9 +114,17 @@ const Login: React.FC = () => {
           </form>
         </div>
         
-        <p className="mt-8 text-center text-[10px] text-text-muted font-bold uppercase tracking-tighter opacity-40">
-          Reach uses End-to-End Encryption by default.
-        </p>
+        <div className="mt-8 flex justify-center">
+          <a 
+            href="https://github.com/xahors/reach" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="group flex items-center space-x-2 rounded-full border border-border-main bg-bg-nav/20 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-text-muted transition-all hover:bg-bg-hover hover:text-white"
+          >
+            <GitBranch className="h-4 w-4 transition-transform group-hover:scale-110" />
+            <span>GitHub</span>
+          </a>
+        </div>
       </div>
     </div>
   );

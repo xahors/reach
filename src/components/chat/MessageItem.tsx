@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { MatrixEvent, EventStatus, RelationType, RoomEvent, EventType, ThreadEvent, MatrixEventEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
+import { matrixService } from '../../core/matrix';
 import { useAppStore } from '../../store/useAppStore';
 import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings, Smile, MessageSquare, Lock, AlertCircle } from 'lucide-react';
 import { cn } from '../../utils/cn';
@@ -70,6 +71,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const [threadReplyCount, setThreadReplyCount] = useState(0);
   const [latestReply, setLatestReply] = useState<MatrixEvent | null>(null);
 
+  // Read Receipts: List of user avatars/names
+  const [readReceipts, setReadReceipts] = useState<{ userId: string, avatarUrl: string | null, name: string }[]>([]);
+  const [isVerified, setIsVerified] = useState(true);
+
   const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fullDate = new Date(event.getTs()).toLocaleString();
 
@@ -117,6 +122,31 @@ const MessageItem: React.FC<MessageItemProps> = ({
     setReactions(grouped);
   }, [client, event, userId]);
 
+  const updateReadReceipts = useCallback(() => {
+    if (!client) return;
+    const room = client.getRoom(event.getRoomId());
+    if (!room) return;
+
+    const receipts = room.getReceiptsForEvent(event);
+    if (!receipts || receipts.length === 0) {
+      setReadReceipts([]);
+      return;
+    }
+
+    const members = receipts
+      .filter(r => r.type === 'm.read' && r.userId !== userId)
+      .map(r => {
+        const member = room.getMember(r.userId);
+        return {
+          userId: r.userId,
+          name: member?.name || r.userId,
+          avatarUrl: member?.getAvatarUrl(client.getHomeserverUrl(), 16, 16, 'crop', undefined, true) || null
+        };
+      });
+
+    setReadReceipts(members);
+  }, [client, event, userId]);
+
   const updateThreadInfo = useCallback(() => {
     if (!client) return;
     const room = client.getRoom(event.getRoomId());
@@ -156,7 +186,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
     // Defer initial data fetching to avoid synchronous setState in render
     const timer = setTimeout(() => {
       updateReactions();
+      updateReadReceipts();
       if (!isThreadRoot && !isThread) updateThreadInfo();
+      
+      const crypto = matrixService.getCrypto();
+      const deviceId = client.getDeviceId();
+      if (crypto && userId && deviceId) {
+        crypto.getDeviceVerificationStatus(userId, deviceId).then(status => {
+          setIsVerified(!!status?.isVerified());
+        });
+      }
     }, 0);
 
     const room = client.getRoom(event.getRoomId());
@@ -171,6 +210,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
           updateThreadInfo();
         }
       }
+    };
+
+    const onReceipt = () => {
+      // Any receipt in the room might affect this message's visibility in others' read lists
+      updateReadReceipts();
     };
 
     const onRedaction = (redactedEvent: MatrixEvent) => {
@@ -194,6 +238,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
     room?.on(RoomEvent.Timeline, onTimeline);
     room?.on(RoomEvent.Redaction, onRedaction);
+    room?.on(RoomEvent.Receipt, onReceipt);
     room?.on(ThreadEvent.Update, onThreadUpdate);
     room?.on(ThreadEvent.NewReply, onThreadUpdate);
     event.on(MatrixEventEvent.Decrypted, onDecrypted);
@@ -202,11 +247,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
       clearTimeout(timer);
       room?.removeListener(RoomEvent.Timeline, onTimeline);
       room?.removeListener(RoomEvent.Redaction, onRedaction);
+      room?.removeListener(RoomEvent.Receipt, onReceipt);
       room?.removeListener(ThreadEvent.Update, onThreadUpdate);
       room?.removeListener(ThreadEvent.NewReply, onThreadUpdate);
       event.removeListener(MatrixEventEvent.Decrypted, onDecrypted);
     };
-  }, [client, event, isRedacted, updateReactions, updateThreadInfo, isThreadRoot, isThread, forceUpdate]);
+  }, [client, event, isRedacted, updateReactions, updateThreadInfo, updateReadReceipts, isThreadRoot, isThread, forceUpdate, userId]);
 
   React.useLayoutEffect(() => {
     if (showEmojiPicker && actionButtonRef.current) {
@@ -419,18 +465,19 @@ const MessageItem: React.FC<MessageItemProps> = ({
   
   let body: React.ReactNode = isRedacted ? 'This message was deleted.' : content.body;
   
-  if (isDecryptionFailure) {
+  if (isDecryptionFailure || isUndecrypted) {
+    const showWaiting = isUndecrypted || !isVerified;
     body = (
-      <div className="flex items-center space-x-2 text-red-400 bg-red-500/10 px-2 py-1 rounded border border-red-500/20 w-fit">
-        <AlertCircle className="h-3 w-3" />
-        <span className="text-xs font-medium italic">Decryption error</span>
-      </div>
-    );
-  } else if (isUndecrypted) {
-    body = (
-      <div className="flex items-center space-x-2 text-text-muted bg-bg-nav px-2 py-1 rounded border border-border-main w-fit animate-pulse">
-        <Lock className="h-3 w-3" />
-        <span className="text-xs italic">Waiting for decryption...</span>
+      <div className={cn(
+        "flex items-center space-x-2 px-2 py-1 rounded border w-fit",
+        showWaiting 
+          ? "text-text-muted bg-bg-nav border-border-main animate-pulse" 
+          : "text-red-400 bg-red-500/10 border-red-500/20"
+      )}>
+        {showWaiting ? <Lock className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+        <span className="text-xs font-medium italic">
+          {showWaiting ? "Waiting for security key..." : "Decryption error"}
+        </span>
       </div>
     );
   }
@@ -601,10 +648,23 @@ const MessageItem: React.FC<MessageItemProps> = ({
           )}
         </div>
       ) : (
-        <div className="mr-4 flex w-10 shrink-0 justify-center">
+        <div className="mr-4 flex w-10 shrink-0 flex-col items-center">
           <span className="opacity-0 group-hover:opacity-100 text-[9px] text-text-muted font-mono mt-1 transition-opacity">
             {timestamp}
           </span>
+          {readReceipts.length > 0 && (
+            <div className="flex -space-x-1 mt-1 opacity-40 group-hover:opacity-100 transition-opacity">
+               {readReceipts.slice(0, 3).map(receipt => (
+                  <div key={receipt.userId} className="h-3.5 w-3.5 rounded-full border border-bg-main bg-bg-nav overflow-hidden" title={`Read by ${receipt.name}`}>
+                    {receipt.avatarUrl ? (
+                      <img src={receipt.avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-[5px] bg-bg-nav text-text-muted">{receipt.name.charAt(0)}</div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -620,6 +680,25 @@ const MessageItem: React.FC<MessageItemProps> = ({
             <span className="text-[10px] font-mono text-text-muted uppercase tracking-tighter" title={fullDate}>
               {timestamp}
             </span>
+            {/* Read Receipts */}
+            {readReceipts.length > 0 && (
+              <div className="flex -space-x-1 overflow-hidden opacity-40 hover:opacity-100 transition-opacity">
+                {readReceipts.slice(0, 5).map(receipt => (
+                  <div key={receipt.userId} className="h-4 w-4 rounded-full border border-bg-main bg-bg-nav overflow-hidden" title={`Read by ${receipt.name}`}>
+                    {receipt.avatarUrl ? (
+                      <img src={receipt.avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-[6px] bg-bg-nav text-text-muted">{receipt.name.charAt(0)}</div>
+                    )}
+                  </div>
+                ))}
+                {readReceipts.length > 5 && (
+                  <div className="flex h-4 w-4 items-center justify-center rounded-full border border-bg-main bg-bg-nav text-[6px] text-text-muted font-bold" title={`${readReceipts.length - 5} more`}>
+                    +{readReceipts.length - 5}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

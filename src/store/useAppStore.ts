@@ -171,6 +171,7 @@ interface AppState {
   roomSectionOrder: Record<string, string[]>; // spaceId -> list of section names
   themeConfig: ThemeConfig;
   showUrlPreviews: boolean;
+  sendReadReceipts: boolean;
   mediaPreview: {
     url: string;
     type: 'image' | 'video';
@@ -217,6 +218,7 @@ interface AppState {
   removeSection: (spaceId: string, sectionName: string) => void;
   setThemeConfig: (config: Partial<ThemeConfig>) => void;
   setShowUrlPreviews: (show: boolean) => void;
+  setSendReadReceipts: (send: boolean) => void;
   setMediaPreview: (preview: AppState['mediaPreview']) => void;
   setGlobalNotificationSettings: (settings: Partial<AppState['globalNotificationSettings']>) => void;
   setRoomNotificationSetting: (roomId: string, setting: AppState['roomNotificationSettings'][string]) => void;
@@ -264,6 +266,7 @@ export const useAppStore = create<AppState>()(
         customCSS: '',
       },
       showUrlPreviews: true,
+      sendReadReceipts: true,
       mediaPreview: null,
       globalNotificationSettings: {
         enabled: true,
@@ -369,6 +372,7 @@ export const useAppStore = create<AppState>()(
         themeConfig: { ...state.themeConfig, ...config }
       })),
       setShowUrlPreviews: (show) => set({ showUrlPreviews: show }),
+      setSendReadReceipts: (send) => set({ sendReadReceipts: send }),
       setMediaPreview: (preview) => set({ mediaPreview: preview }),
       setGlobalNotificationSettings: (settings) => set((state) => ({
         globalNotificationSettings: { ...state.globalNotificationSettings, ...settings }
@@ -392,6 +396,7 @@ export const useAppStore = create<AppState>()(
         roomSectionOrder: state.roomSectionOrder,
         themeConfig: state.themeConfig,
         showUrlPreviews: state.showUrlPreviews,
+        sendReadReceipts: state.sendReadReceipts,
         activeSpaceId: state.activeSpaceId,
         activeRoomId: state.activeRoomId,
         globalNotificationSettings: state.globalNotificationSettings,

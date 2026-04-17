@@ -7,7 +7,7 @@ import { timelineManager } from '../core/timelineManager';
 
 export const useRoomMessages = (roomId: string | null) => {
   const client = useMatrixClient();
-  const { messageLoadPolicy } = useAppStore();
+  const { messageLoadPolicy, sendReadReceipts } = useAppStore();
   const [readMarkerId, setReadMarkerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -371,7 +371,7 @@ export const useRoomMessages = (roomId: string | null) => {
   }, [client, roomId, refreshMessages]);
 
   const markAsRead = useCallback(async () => {
-    if (!client || !roomId || messages.length === 0 || loading) return;
+    if (!client || !roomId || messages.length === 0 || loading || !sendReadReceipts) return;
     
     const lastMessage = messages[messages.length - 1];
     const eventId = lastMessage.getId();
@@ -389,7 +389,7 @@ export const useRoomMessages = (roomId: string | null) => {
       console.error('Failed to update read markers:', error);
       lastSentReceiptIdRef.current = null;
     }
-  }, [client, roomId, messages, loading]);
+  }, [client, roomId, messages, loading, sendReadReceipts]);
 
   return { messages, loading, paginate, canPaginate, canPaginateForward, redactAllMyMessages, markAsRead, readMarkerId, jumpToEvent, jumpToLive };
 };

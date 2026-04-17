@@ -24,39 +24,32 @@ const SecurityRecovery: React.FC = () => {
       const crypto = matrixService.getCrypto();
       if (!crypto) return;
 
-      // 1. Check if we are already verified (Cross-signing signed by owner)
       const userId = client.getUserId();
       const deviceId = client.getDeviceId();
-      if (userId && deviceId) {
-        const verificationStatus = await crypto.getDeviceVerificationStatus(userId, deviceId);
-        if (verificationStatus?.isVerified()) {
-          setNeedsRecovery(false);
-          return;
-        }
-      }
+      if (!userId || !deviceId) return;
 
-      // 2. Check if cross-signing private keys are cached locally.
+      // 1. Check if this device is verified
+      const verificationStatus = await crypto.getDeviceVerificationStatus(userId, deviceId);
+      const isVerified = verificationStatus?.isVerified();
+
+      // 2. Check cross-signing status
       const crossSigningStatus = await crypto.getCrossSigningStatus?.();
-      if (crossSigningStatus?.privateKeysCachedLocally?.masterKey) {
-        setNeedsRecovery(false);
-        return;
-      }
-
-      // 3. Check key backup trust. 
+      const hasMasterKey = !!crossSigningStatus?.privateKeysCachedLocally?.masterKey;
+      
+      // 3. Check key backup trust
       const backupInfo = await crypto.getKeyBackupInfo();
+      let isBackupTrusted = false;
       if (backupInfo) {
         const trust = await crypto.isKeyBackupTrusted(backupInfo);
-        if (!trust.trusted) {
-          setNeedsRecovery(true);
-          return;
-        }
+        isBackupTrusted = !!trust.trusted;
       }
 
-      const missingKeys = crossSigningStatus &&
-        (!crossSigningStatus.publicKeysOnDevice ||
-          !crossSigningStatus.privateKeysCachedLocally?.masterKey);
+      // If we aren't verified AND we don't have the master key locally, we definitely need recovery.
+      // Also if we have a backup but it's not trusted, we need recovery to trust it.
+      const needs = !isVerified || !hasMasterKey || (!!backupInfo && !isBackupTrusted);
       
-      setNeedsRecovery(!!missingKeys);
+      console.log('Security check:', { isVerified, hasMasterKey, isBackupTrusted, needs });
+      setNeedsRecovery(needs);
     } catch (e) {
       console.error('Error checking recovery status:', e);
     }

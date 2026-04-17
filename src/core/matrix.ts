@@ -21,6 +21,7 @@ class MatrixService {
   private wasmInitialized = false;
   private isInitializing = false;
   private isStarting = false;
+  private initPromise: Promise<sdk.MatrixClient | null> | null = null;
 
   private async initWasm() {
     if (this.wasmInitialized) return;
@@ -144,45 +145,49 @@ class MatrixService {
   }
 
   async loginWithStoredToken(): Promise<sdk.MatrixClient | null> {
-    if (this.isInitializing) return null;
+    if (this.initPromise) return this.initPromise;
     if (this.client?.clientRunning) return this.client;
 
-    this.isInitializing = true;
+    this.initPromise = (async () => {
+      this.isInitializing = true;
 
-    try {
-      const accessToken = localStorage.getItem('matrix_access_token');
-      const userId = localStorage.getItem('matrix_user_id');
-      const deviceId = localStorage.getItem('matrix_device_id');
-      const homeserver = localStorage.getItem('matrix_homeserver');
-
-      if (!accessToken || !userId || !deviceId || !homeserver) {
-        return null;
-      }
-
-      await this.initWasm();
-      
-      if (!this.client) {
-        this.client = await this.createClientInstance(homeserver, accessToken, userId, deviceId);
-      }
-      
       try {
-        await this.initEncryption();
-      } catch (err) {
-        console.error("Encryption initialization failed.");
-        throw err;
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      if (!this.isInitializing) return null;
+        const accessToken = localStorage.getItem('matrix_access_token');
+        const userId = localStorage.getItem('matrix_user_id');
+        const deviceId = localStorage.getItem('matrix_device_id');
+        const homeserver = localStorage.getItem('matrix_homeserver');
 
-      await this.start();
-      return this.client;
-    } catch (e) {
-      console.error("Token login failed:", e);
-      return null;
-    } finally {
-      this.isInitializing = false;
-    }
+        if (!accessToken || !userId || !deviceId || !homeserver) {
+          return null;
+        }
+
+        await this.initWasm();
+        
+        if (!this.client) {
+          this.client = await this.createClientInstance(homeserver, accessToken, userId, deviceId);
+        }
+        
+        try {
+          await this.initEncryption();
+        } catch (err) {
+          console.error("Encryption initialization failed.");
+          throw err;
+        }
+
+        await this.start();
+        return this.client;
+      } catch (e) {
+        console.error("Token login failed:", e);
+        // Clear client on hard failure so we can retry from clean state
+        this.client = null;
+        return null;
+      } finally {
+        this.isInitializing = false;
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   private async initEncryption() {
