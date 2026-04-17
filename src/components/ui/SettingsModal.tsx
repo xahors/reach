@@ -6,10 +6,11 @@ import { notificationService } from '../../core/notifications';
 import { 
   X, Shield, Lock, LogOut, Bell, Monitor, 
   CheckCircle2, Gamepad2, Edit2, Palette, Code,
-  Volume2, AtSign
+  Volume2, AtSign, LifeBuoy, FileText, GitBranch, AlertCircle
 } from 'lucide-react';
 import type { IMyDevice } from 'matrix-js-sdk';
 import { useGamePresence } from '../../hooks/useGamePresence';
+import { reachLogger } from '../../utils/logger';
 
 const SettingsModal: React.FC = () => {
   const { 
@@ -40,8 +41,8 @@ const SettingsModal: React.FC = () => {
   const [editingGame, setEditingGame] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   
-  const activeTab = activeSettingsTab;
-  const setActiveTab = (tab: 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance') => setSettingsOpen(true, tab);
+  const activeTab = activeSettingsTab as string;
+  const setActiveTab = (tab: 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support') => setSettingsOpen(true, tab);
 
   const handleRenameGame = (process: string) => {
     setCustomGameNames({
@@ -165,11 +166,12 @@ const SettingsModal: React.FC = () => {
             <nav className="space-y-1">
               {[
                 { id: 'appearance', label: 'Appearance', icon: Palette },
+                { id: 'support', label: 'Support & Logs', icon: LifeBuoy },
               ].map(item => (
                 <button
                   key={item.id}
                   data-protected={item.id === 'appearance' ? 'true' : undefined}
-                  onClick={() => setActiveTab(item.id as 'appearance')}
+                  onClick={() => setActiveTab(item.id as 'appearance' | 'support')}
                   className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === item.id ? 'bg-bg-hover text-text-main ring-1 ring-white/10' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
                 >
                   <item.icon className={`mr-2 h-4 w-4 ${activeTab === item.id ? 'text-accent-primary' : ''}`} />
@@ -568,6 +570,59 @@ const SettingsModal: React.FC = () => {
                       className="h-32 w-full rounded-lg bg-bg-sidebar p-4 font-mono text-xs text-text-main outline-none ring-1 ring-border-main focus:ring-accent-primary transition-all"
                     />
                     <p className="mt-2 text-[10px] text-text-muted italic">Warning: Custom CSS can break the application layout. Use with caution.</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'support' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Support & Logs</h1>
+              
+              <div className="space-y-8">
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Debug Logging</h2>
+                  <div className="rounded-xl bg-bg-nav p-6 border border-border-main/50">
+                    <div className="flex items-center space-x-4 mb-6">
+                      <div className="p-3 bg-accent-primary/10 rounded-xl">
+                        <FileText className="h-6 w-6 text-accent-primary" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white uppercase tracking-tighter">Client Logs</h3>
+                        <p className="text-xs text-text-muted">Download your recent application logs to help diagnose issues. Sensitive data is automatically redacted.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => reachLogger.downloadLogs()}
+                      className="flex w-full items-center justify-center rounded-lg bg-bg-sidebar border border-border-main py-2.5 text-xs font-black text-white transition hover:bg-bg-hover uppercase tracking-widest"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Download Logs (.txt)
+                    </button>
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Reporting Issues</h2>
+                  <div className="grid grid-cols-1 gap-4">
+                    <a 
+                      href="https://github.com/durkluf/reach/issues/new?template=bug_report.md" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-xl bg-bg-nav p-6 border border-border-main/30 group hover:border-accent-primary transition-all shadow-sm"
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div className="p-3 bg-bg-sidebar rounded-xl group-hover:bg-accent-primary/10 transition-colors">
+                          <GitBranch className="h-6 w-6 text-white group-hover:text-accent-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-text-main uppercase tracking-tighter">Open GitHub Issue</p>
+                          <p className="text-xs text-text-muted">Submit a bug report or feature request directly to our repository.</p>
+                        </div>
+                      </div>
+                      <AlertCircle className="h-5 w-5 text-text-muted group-hover:text-accent-primary transition-colors" />
+                    </a>
                   </div>
                 </section>
               </div>

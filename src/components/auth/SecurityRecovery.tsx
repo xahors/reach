@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
 import { ClientEvent } from 'matrix-js-sdk';
@@ -12,13 +12,13 @@ const SecurityRecovery: React.FC = () => {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
+  const isCheckingRef = useRef(false);
 
   const checkRecovery = useCallback(async () => {
-    if (!client) return;
+    if (!client || isCheckingRef.current) return;
     
-    // Wait for sync to be ready so we have the latest server state
-    const syncState = client.getSyncState();
-    if (syncState !== 'PREPARED' && syncState !== 'SYNCING') return;
+    // We can check local cache status immediately, but server status needs a client
+    isCheckingRef.current = true;
 
     try {
       const crypto = matrixService.getCrypto();
@@ -30,9 +30,9 @@ const SecurityRecovery: React.FC = () => {
 
       // 1. Check if this device is verified
       const verificationStatus = await crypto.getDeviceVerificationStatus(userId, deviceId);
-      const isVerified = verificationStatus?.isVerified();
+      const isVerified = !!verificationStatus?.isVerified();
 
-      // 2. Check cross-signing status
+      // 2. Check cross-signing status (checks if private keys are in local IndexedDB)
       const crossSigningStatus = await crypto.getCrossSigningStatus?.();
       const hasMasterKey = !!crossSigningStatus?.privateKeysCachedLocally?.masterKey;
       
@@ -44,14 +44,18 @@ const SecurityRecovery: React.FC = () => {
         isBackupTrusted = !!trust.trusted;
       }
 
-      // If we aren't verified AND we don't have the master key locally, we definitely need recovery.
-      // Also if we have a backup but it's not trusted, we need recovery to trust it.
+      // We need recovery if:
+      // - Device is not verified
+      // - OR we don't have our master key (can't verify others or decrypt history)
+      // - OR we have a backup but don't trust it yet
       const needs = !isVerified || !hasMasterKey || (!!backupInfo && !isBackupTrusted);
       
       console.log('Security check:', { isVerified, hasMasterKey, isBackupTrusted, needs });
       setNeedsRecovery(needs);
     } catch (e) {
       console.error('Error checking recovery status:', e);
+    } finally {
+      isCheckingRef.current = false;
     }
   }, [client]);
 
@@ -74,18 +78,34 @@ const SecurityRecovery: React.FC = () => {
 
   const handleRecover = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recoveryKey.trim()) return;
+    const cleanKey = recoveryKey.trim().replace(/\s/g, '');
+    if (!cleanKey) return;
 
     setLoading(true);
     setStatus('Verifying key...');
     
     try {
-      await matrixService.withRecoveryKey(recoveryKey.trim(), async () => {
+      await matrixService.withRecoveryKey(cleanKey, async () => {
         const crypto = matrixService.getCrypto();
         if (!crypto) throw new Error('Crypto not initialized');
 
         setStatus('Restoring cross-signing...');
         await crypto.bootstrapCrossSigning({ setupNewCrossSigning: false });
+
+        // NEW: Explicitly verify this device now that we have cross-signing keys
+        const userId = client?.getUserId();
+        const deviceId = client?.getDeviceId();
+        if (userId && deviceId) {
+          setStatus('Verifying this session...');
+          await crypto.setDeviceVerified(userId, deviceId, true);
+          
+          // Ensure the SDK updates its internal trust state
+          // @ts-expect-error - Newer SDK feature
+          if (typeof crypto.checkOwnCrossSigningTrust === 'function') {
+            // @ts-expect-error - Newer SDK feature
+            await crypto.checkOwnCrossSigningTrust();
+          }
+        }
 
         setStatus('Restoring message backup...');
         if (crypto.loadSessionBackupPrivateKeyFromSecretStorage) {
@@ -104,7 +124,7 @@ const SecurityRecovery: React.FC = () => {
         }
 
         setStatus('Success! Messages will decrypt shortly.');
-        setTimeout(() => setNeedsRecovery(false), 2000);
+        setNeedsRecovery(false);
       });
     } catch (err) {
       console.error(err);

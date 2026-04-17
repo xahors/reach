@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { CallFeed, CallFeedEvent } from 'matrix-js-sdk/lib/webrtc/callFeed';
-import { MicOff, User } from 'lucide-react';
+import { MicOff, User, Pin } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 interface ParticipantTileProps {
@@ -8,10 +8,19 @@ interface ParticipantTileProps {
   isLocal?: boolean;
   className?: string;
   onActivity?: (level: number) => void;
+  onDoubleClick?: () => void;
   showDetails?: boolean;
+  isPinned?: boolean;
 }
 
-const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal = false, className, onActivity }) => {
+const ParticipantTile: React.FC<ParticipantTileProps> = ({ 
+  feed, 
+  isLocal = false, 
+  className, 
+  onActivity, 
+  onDoubleClick,
+  isPinned 
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isAudioMuted, setIsAudioMuted] = React.useState(feed.isAudioMuted());
@@ -47,11 +56,14 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal = false
   }, [feed, isLocal, onActivity]);
 
   return (
-    <div className={cn(
-      "relative aspect-video overflow-hidden rounded-xl bg-bg-nav border border-border-main transition-all duration-300",
-      isSpeaking ? "ring-2 ring-accent-primary ring-offset-2 ring-offset-bg-main" : "",
-      className
-    )}>
+    <div 
+      onDoubleClick={onDoubleClick}
+      className={cn(
+        "relative aspect-video overflow-hidden rounded-xl bg-bg-nav border border-border-main transition-all duration-300 group",
+        isSpeaking ? "ring-2 ring-accent-primary ring-offset-2 ring-offset-bg-main" : "",
+        className
+      )}
+    >
       {/* Video Element */}
       {!isVideoMuted ? (
         <video
@@ -83,6 +95,12 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({ feed, isLocal = false
         </span>
         {isAudioMuted && <MicOff className="h-3 w-3 text-red-500" />}
       </div>
+
+      {isPinned && (
+        <div className="absolute top-2 right-2 rounded-full bg-yellow-500 p-1 shadow-lg animate-in zoom-in duration-300">
+          <Pin className="h-3 w-3 text-black" />
+        </div>
+      )}
     </div>
   );
 };

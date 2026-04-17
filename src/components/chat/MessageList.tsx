@@ -30,10 +30,17 @@ const MessageList: React.FC<MessageListProps> = ({
   readMarkerId
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(!canPaginateForward);
   const prevMessagesLength = useRef(messages.length);
+  const prevRoomId = useRef(roomId);
   const client = useMatrixClient();
   const room = client?.getRoom(roomId);
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  };
 
   // Group messages by sender and time
   const groupedMessages = useMemo(() => {
@@ -72,18 +79,37 @@ const MessageList: React.FC<MessageListProps> = ({
     return groups;
   }, [messages]);
 
-  const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  // Force scroll to bottom when room changes and we're at the live end
+  useEffect(() => {
+    if (prevRoomId.current !== roomId) {
+      prevRoomId.current = roomId;
+      if (!canPaginateForward) {
+        // Small delay to ensure content is rendered and avoid cascading renders
+        setTimeout(() => {
+          setShouldScrollToBottom(true);
+          scrollToBottom();
+        }, 50);
+      }
     }
-  };
+  }, [roomId, canPaginateForward]);
 
   useEffect(() => {
-    if (shouldScrollToBottom) {
+    // If new messages arrive and we were already at the bottom, stay at the bottom
+    if (messages.length > prevMessagesLength.current && shouldScrollToBottom) {
       scrollToBottom();
     }
+    
+    // Auto-fill: if we don't have enough messages to fill the screen, load more
+    if (!loading && canPaginate && onPaginate && scrollRef.current) {
+      const { scrollHeight, clientHeight } = scrollRef.current;
+      // If content is shorter than the container, load more
+      if (scrollHeight <= clientHeight && messages.length > 0) {
+        onPaginate();
+      }
+    }
+
     prevMessagesLength.current = messages.length;
-  }, [messages, shouldScrollToBottom]);
+  }, [messages, shouldScrollToBottom, loading, canPaginate, onPaginate]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
@@ -167,7 +193,7 @@ const MessageList: React.FC<MessageListProps> = ({
               onClick={canPaginateForward ? onJumpToLive : scrollToBottom}
               className="flex items-center space-x-2 rounded-full border border-border-main bg-bg-nav px-4 py-1.5 text-[10px] font-black text-text-muted transition hover:bg-bg-hover hover:text-white uppercase tracking-tighter pointer-events-auto shadow-lg shadow-black/50"
             >
-              <span>Jump to Present</span>
+              <span>{canPaginateForward ? 'New Messages' : 'Jump to Present'}</span>
               <ChevronDown className="h-3 w-3" />
             </button>
           </div>

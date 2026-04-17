@@ -10,45 +10,68 @@ import ChannelDetails from './ChannelDetails';
 import ThreadView from './ThreadView';
 import ActiveCall from '../calls/ActiveCall';
 import { EventType } from 'matrix-js-sdk';
-import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, X, Volume2, Upload } from 'lucide-react';
+import { Hash, Phone, Video, VideoOff, Bell, Pin, Users, Search, HelpCircle, Mic, MicOff, PhoneOff, Volume2, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 import { useFileUpload } from '../../hooks/useFileUpload';
 
 const PinnedMessages: React.FC<{ roomId: string, onJumpToEvent: (id: string) => void }> = ({ roomId, onJumpToEvent }) => {
   const { pinnedEventIds } = usePinnedEvents(roomId);
-  const [isOpen, setIsOpen] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const client = useMatrixClient();
   const room = client?.getRoom(roomId);
   
-  if (!room || pinnedEventIds.length === 0 || !isOpen) return null;
+  if (!room || pinnedEventIds.length === 0) return null;
 
   const pinnedEvents = pinnedEventIds.map(id => room.findEventById(id)).filter(Boolean);
+  if (pinnedEvents.length === 0) return null;
+
+  // Ensure index is within bounds after pins change
+  const safeIndex = Math.min(currentIndex, pinnedEvents.length - 1);
+  const currentEvent = pinnedEvents[safeIndex];
 
   return (
     <div className="flex items-center justify-between p-2 border-b border-border-main bg-bg-nav/50 animate-in fade-in slide-in-from-top-1 duration-300">
-      <div className="flex items-center space-x-2 text-text-muted overflow-hidden">
-        <Pin className="h-4 w-4 shrink-0" />
-        <span className="font-bold text-[10px] uppercase tracking-wider shrink-0">Pinned</span>
+      <div className="flex items-center space-x-2 text-text-muted overflow-hidden flex-1">
+        <Pin className="h-4 w-4 shrink-0 text-accent-primary" />
+        <span className="font-bold text-[10px] uppercase tracking-wider shrink-0">Pinned ({pinnedEvents.length})</span>
         
-        {pinnedEvents[0] && (
+        {currentEvent && (
           <div 
-            onClick={() => onJumpToEvent(pinnedEvents[0]!.getId()!)}
-            className="flex items-center space-x-2 truncate cursor-pointer hover:bg-white/5 p-1 rounded"
+            onClick={() => onJumpToEvent(currentEvent.getId()!)}
+            className="flex items-center space-x-2 truncate cursor-pointer hover:bg-white/5 p-1 rounded min-w-0 flex-1"
           >
-            <span className="text-xs font-bold text-white truncate">{pinnedEvents[0].sender?.name}:</span>
-            <span className="text-xs truncate italic">{pinnedEvents[0].getContent().body}</span>
+            <span className="text-xs font-bold text-white shrink-0 truncate max-w-[100px]">{currentEvent.sender?.name || currentEvent.getSender()}:</span>
+            <span className="text-xs truncate italic text-text-main">{currentEvent.getContent().body}</span>
           </div>
         )}
       </div>
       
-      <div className="flex items-center space-x-2">
-        {pinnedEventIds.length > 1 && (
-          <button className="text-[10px] font-bold text-accent-primary hover:underline uppercase tracking-tighter">
-            View All ({pinnedEventIds.length})
-          </button>
+      <div className="flex items-center space-x-1 ml-4">
+        {pinnedEvents.length > 1 && (
+          <div className="flex items-center bg-bg-main rounded-md border border-border-main p-0.5 mr-2">
+            <button 
+              onClick={() => setCurrentIndex(prev => (prev > 0 ? prev - 1 : pinnedEvents.length - 1))}
+              className="p-1 hover:bg-bg-hover rounded transition text-text-muted hover:text-white"
+            >
+              <ChevronLeft className="h-3 w-3" />
+            </button>
+            <span className="px-1.5 text-[9px] font-mono font-bold text-accent-primary">
+              {safeIndex + 1}/{pinnedEvents.length}
+            </span>
+            <button 
+              onClick={() => setCurrentIndex(prev => (prev < pinnedEvents.length - 1 ? prev + 1 : 0))}
+              className="p-1 hover:bg-bg-hover rounded transition text-text-muted hover:text-white"
+            >
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
         )}
-        <button onClick={() => setIsOpen(false)} className="p-1 rounded-full hover:bg-white/10 text-text-muted hover:text-white">
-          <X className="h-4 w-4" />
+        <button 
+          onClick={() => onJumpToEvent(currentEvent!.getId()!)}
+          className="p-1.5 rounded-full hover:bg-white/10 text-text-muted hover:text-white transition"
+          title="Jump to Message"
+        >
+          <Search className="h-4 w-4" />
         </button>
       </div>
     </div>

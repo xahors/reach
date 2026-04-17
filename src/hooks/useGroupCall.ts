@@ -24,6 +24,14 @@ export const useGroupCall = (roomId: string | null) => {
     if (!room) return;
 
     const sdkGroupCall = client.getGroupCallForRoom(roomId);
+    
+    // If the SDK group call object is in ENDED state, it shouldn't be considered active
+    if (sdkGroupCall && sdkGroupCall.state === GroupCallState.Ended) {
+      setHasGroupCall(false);
+      setParticipantCount(0);
+      setGroupCall(null);
+      return;
+    }
 
     // Count active participants from m.call.member state events
     const memberEvents = [
@@ -31,8 +39,31 @@ export const useGroupCall = (roomId: string | null) => {
       ...room.currentState.getStateEvents('org.matrix.msc3401.call.member'),
     ];
 
+    const myUserId = client.getUserId();
     const activeParticipants = memberEvents.filter(ev => {
       const content = ev.getContent();
+      const userId = ev.getStateKey();
+      
+      // If the only participant is ME and I'm not in the call, ignore it.
+      // This prevents ghost sessions from keeping the JOIN button active.
+      const isLocallyJoined = !!sdkGroupCall && (
+        sdkGroupCall.state === GroupCallState.Entered ||
+        sdkGroupCall.state === GroupCallState.InitializingLocalCallFeed
+      );
+      if (userId === myUserId && !isLocallyJoined) return false;
+
+      // If there's an associated m.call event, ensure it exists and isn't ended/deleted
+      if (content?.call_id) {
+         const callEvent = room.currentState.getStateEvents('m.call', content.call_id) || 
+                          room.currentState.getStateEvents('org.matrix.msc3401.call', content.call_id);
+         if (!callEvent || callEvent.isRedacted()) return false;
+      }
+
+      // Zombie Filter: if a participant has been "active" alone for more than 10 mins 
+      // without a sync update, they are likely a ghost.
+      const eventAge = Date.now() - ev.getTs();
+      if (eventAge > 10 * 60 * 1000) return false;
+
       // MSC3401 style: members array with membership field
       if (Array.isArray(content?.members)) {
         return content.members.some((m: { membership?: string }) => m.membership !== 'leave');

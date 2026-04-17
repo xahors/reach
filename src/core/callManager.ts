@@ -113,7 +113,7 @@ class CallManager {
     updateFeeds();
   }
 
-  private playFeedbackSound(type: 'mute' | 'unmute' | 'connect' | 'place') {
+  private playFeedbackSound(type: 'mute' | 'unmute' | 'connect' | 'place' | 'hangup') {
     const context = this.warmupAndGetContext();
     if (!context) return;
 
@@ -140,6 +140,10 @@ class CallManager {
         startFreq = 392.00;
         endFreq = 523.25;
         duration = 0.15;
+      } else if (type === 'hangup') {
+        startFreq = 440.00;
+        endFreq = 220.00;
+        duration = 0.25;
       }
 
       const now = context.currentTime;
@@ -257,13 +261,29 @@ class CallManager {
     }
   }
 
-  hangupCall() {
+  async hangupCall() {
     if (this.currentCall) {
       this.currentCall.hangup(CallErrorCode.UserHangup, false);
       this.clearCall();
     } else if (this.currentGroupCall) {
-      this.currentGroupCall.leave();
-      this.clearGroupCall();
+      const groupCall = this.currentGroupCall;
+      
+      // If we are the only participant, terminate the call to clear room state
+      // Otherwise, just leave the call
+      const participantCount = groupCall.participants.size;
+      
+      try {
+        if (participantCount <= 1) {
+          console.log('Terminating group call as last participant...');
+          await groupCall.terminate();
+        } else {
+          await groupCall.leave();
+        }
+      } catch (err) {
+        console.error('Error leaving/terminating group call:', err);
+      } finally {
+        this.clearGroupCall();
+      }
     }
   }
 
@@ -333,6 +353,7 @@ class CallManager {
   }
 
   private clearCall() {
+    this.playFeedbackSound('hangup');
     this.currentCall = null;
     useAppStore.getState().setActiveCall(null);
     useAppStore.getState().setIncomingCall(null);
@@ -340,6 +361,7 @@ class CallManager {
   }
 
   private clearGroupCall() {
+    this.playFeedbackSound('hangup');
     this.currentGroupCall = null;
     useAppStore.getState().setActiveGroupCall(null);
     useAppStore.getState().setCallFeeds([]);

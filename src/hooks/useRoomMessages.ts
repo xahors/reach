@@ -245,7 +245,7 @@ export const useRoomMessages = (roomId: string | null) => {
       const newWindow = timelineManager.getOrCreateWindow(client, r);
       timelineWindow.current = newWindow;
       
-      newWindow.load(undefined, 50)
+      newWindow.load(undefined, 100)
         .then(() => {
           timelineManager.markLoaded(r.roomId);
           refreshMessages();
@@ -280,14 +280,33 @@ export const useRoomMessages = (roomId: string | null) => {
 
           const targetEventId = readMarkerIdFromRoom || readReceiptIdFromRoom;
 
-          if (targetEventId) {
+          // If target is the very last displayable event in the live timeline, just load live
+          const liveEvents = targetRoom.getLiveTimeline().getEvents().filter(event => {
+            const type = event.getType();
+            return (
+              type === 'm.room.message' ||
+              type === 'm.room.encrypted' ||
+              type === 'm.sticker' ||
+              type === 'm.call.invite'
+            ) && !event.isRelation('m.replace') && !event.isRelation('m.thread');
+          });
+          const lastLiveEventId = liveEvents[liveEvents.length - 1]?.getId();
+          const isAtLiveEnd = targetEventId === lastLiveEventId;
+
+          if (targetEventId && !isAtLiveEnd) {
             await window.load(targetEventId, 100);
-            // Scroll forward past the read marker so unread messages are visible
-            if (window.canPaginate(Direction.Forward)) {
-              await window.paginate(Direction.Forward, 25);
+            
+            // Catch up to the live end if it's within a reasonable distance (a few pagination chunks)
+            // This ensures that if the user has read everything, they land at the bottom,
+            // but if there are truly a lot of unread messages, they start at the marker.
+            let loops = 0;
+            while (window.canPaginate(Direction.Forward) && loops < 10) {
+              const success = await window.paginate(Direction.Forward, 50);
+              if (!success) break;
+              loops++;
             }
           } else {
-            // No read marker — fall back to the live end
+            // No read marker or already at end — fall back to the live end
             await window.load(undefined, 100);
           }
         }

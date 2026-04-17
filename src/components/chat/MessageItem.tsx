@@ -73,7 +73,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
   // Read Receipts: List of user avatars/names
   const [readReceipts, setReadReceipts] = useState<{ userId: string, avatarUrl: string | null, name: string }[]>([]);
-  const [isVerified, setIsVerified] = useState(true);
+  const [isVerified, setIsVerified] = useState(false);
 
   const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fullDate = new Date(event.getTs()).toLocaleString();
@@ -192,8 +192,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
       const crypto = matrixService.getCrypto();
       const deviceId = client.getDeviceId();
       if (crypto && userId && deviceId) {
-        crypto.getDeviceVerificationStatus(userId, deviceId).then(status => {
-          setIsVerified(!!status?.isVerified());
+        Promise.all([
+          crypto.getDeviceVerificationStatus(userId, deviceId),
+          crypto.getCrossSigningStatus()
+        ]).then(([status, crossSigning]) => {
+          const verified = !!status?.isVerified();
+          const hasMasterKey = !!crossSigning?.privateKeysCachedLocally?.masterKey;
+          // If we aren't verified OR we don't have our own keys, we're in a "waiting" state
+          setIsVerified(verified && hasMasterKey);
         });
       }
     }, 0);

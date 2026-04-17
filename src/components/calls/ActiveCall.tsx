@@ -79,6 +79,14 @@ const ActiveCall: React.FC = () => {
     }
   }, [showSettings]);
 
+  const togglePin = (feedId: string) => {
+    if (prioritizedFeedId === feedId) {
+      setPrioritizedFeedId(null);
+    } else {
+      setPrioritizedFeedId(feedId);
+    }
+  };
+
   const renderFeed = (feed: CallFeed, className = "") => {
     const feedId = (feed as { feedId?: string }).feedId || `${feed.userId}-${feed.purpose}`;
     return (
@@ -90,7 +98,8 @@ const ActiveCall: React.FC = () => {
         onActivity={(level: number) => {
           speakerLevels.current[feedId] = level;
         }}
-
+        isPinned={prioritizedFeedId === feedId}
+        onDoubleClick={() => togglePin(feedId)}
       />
     );
   };
@@ -148,11 +157,14 @@ const ActiveCall: React.FC = () => {
           </div>
           {otherFeeds.length > 0 && (
             <div className="flex-1 flex flex-row gap-2 overflow-x-auto no-scrollbar h-32 py-1">
-              {otherFeeds.map(f => (
-                <div key={(f as { feedId?: string }).feedId || f.userId} className="w-44 shrink-0 cursor-pointer hover:ring-2 hover:ring-discord-accent rounded-lg overflow-hidden transition-all" onClick={() => setPrioritizedFeedId((f as { feedId?: string }).feedId || null)}>
-                  {renderFeed(f, "h-full w-full")}
-                </div>
-              ))}
+              {otherFeeds.map(f => {
+                 const fid = (f as { feedId?: string }).feedId || f.userId;
+                 return (
+                  <div key={fid} className="w-44 shrink-0 cursor-pointer hover:ring-2 hover:ring-discord-accent rounded-lg overflow-hidden transition-all" onClick={() => togglePin(fid)}>
+                    {renderFeed(f, "h-full w-full")}
+                  </div>
+                 );
+              })}
             </div>
           )}
         </div>
@@ -160,25 +172,55 @@ const ActiveCall: React.FC = () => {
     }
 
     // Grid View (Default)
-    // Adjust grid columns based on count to keep tiles large and aspect-video
-    let gridClasses = "grid-cols-1";
-    if (feedsCount === 2) gridClasses = "grid-cols-1 sm:grid-cols-2";
-    else if (feedsCount <= 4) gridClasses = "grid-cols-2";
-    else if (feedsCount <= 6) gridClasses = "grid-cols-2 sm:grid-cols-3";
-    else gridClasses = "grid-cols-3 sm:grid-cols-4";
+    if (callContentLayout === 'grid') {
+      // If only one person, or someone is pinned, use a "maximized" view similar to speaker view
+      if (feedsCount === 1 || prioritizedFeedId) {
+        const mainFeedId = prioritizedFeedId || (callFeeds[0] as { feedId?: string }).feedId;
+        const mainFeed = callFeeds.find(f => (f as { feedId?: string }).feedId === mainFeedId) || callFeeds[0];
+        const otherFeeds = callFeeds.filter(f => (f as { feedId?: string }).feedId !== (mainFeed as { feedId?: string }).feedId);
+
+        return (
+          <div className="flex-1 flex flex-col overflow-hidden p-2 gap-2">
+            <div className="flex-[4] relative">
+              {renderFeed(mainFeed, "h-full w-full !aspect-auto")}
+            </div>
+            {otherFeeds.length > 0 && (
+              <div className="flex-1 flex flex-row gap-2 overflow-x-auto no-scrollbar h-32 py-1">
+                {otherFeeds.map(f => {
+                   const fid = (f as { feedId?: string }).feedId || f.userId;
+                   return (
+                    <div key={fid} className="w-44 shrink-0 cursor-pointer hover:ring-2 hover:ring-discord-accent rounded-lg overflow-hidden transition-all" onClick={() => togglePin(fid)}>
+                      {renderFeed(f, "h-full w-full")}
+                    </div>
+                   );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // Standard Grid logic for multiple participants
+      let gridClasses = "grid-cols-1";
+      if (feedsCount === 2) gridClasses = "grid-cols-1 sm:grid-cols-2";
+      else if (feedsCount <= 4) gridClasses = "grid-cols-2";
+      else if (feedsCount <= 6) gridClasses = "grid-cols-2 sm:grid-cols-3";
+      else gridClasses = "grid-cols-3 sm:grid-cols-4";
+
+      return (
+        <div className={`flex-1 overflow-y-auto p-4 grid gap-4 no-scrollbar items-center content-center ${gridClasses}`}>
+          {callFeeds.map((feed) => (
+            <div key={(feed as { feedId?: string }).feedId || feed.userId} className="w-full">
+              {renderFeed(feed, "w-full h-full")}
+            </div>
+          ))}
+        </div>
+      );
+    }
 
     return (
-      <div className={`flex-1 overflow-y-auto p-4 grid gap-4 no-scrollbar items-center content-center ${gridClasses}`}>
-        {callFeeds.map((feed) => (
-          <div key={(feed as { feedId?: string }).feedId || feed.userId} className="w-full">
-            {renderFeed(feed, "w-full h-full")}
-          </div>
-        ))}
-        {feedsCount === 0 && (
-          <div className="col-span-full flex items-center justify-center text-discord-text-muted animate-pulse font-bold tracking-widest uppercase text-xs">
-            Waiting for participants...
-          </div>
-        )}
+      <div className="flex-1 flex items-center justify-center text-discord-text-muted animate-pulse font-bold tracking-widest uppercase text-xs">
+        Waiting for participants...
       </div>
     );
   };
@@ -398,7 +440,9 @@ const ActiveCall: React.FC = () => {
         </button>
 
         <button 
-          onClick={() => callManager.hangupCall()}
+          onClick={() => {
+            callManager.hangupCall();
+          }}
           className="h-12 w-12 rounded-full bg-red-500 hover:bg-red-600 shadow-lg flex items-center justify-center text-white transition-all duration-200 hover:rotate-12"
           title="End Call"
         >
