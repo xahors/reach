@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { MatrixEvent, EventStatus, RelationType, RoomEvent, EventType, ThreadEvent, MatrixEventEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
@@ -39,16 +40,24 @@ const MessageItem: React.FC<MessageItemProps> = ({
   isThread = false
 }) => {
   const client = useMatrixClient();
-  const { userId, setEditingEvent, setReplyingToEvent, setThreadOpen } = useAppStore();
+  const { userId, setEditingEvent, setReplyingToEvent, setThreadOpen, themeConfig } = useAppStore();
   const sender = event.sender;
   const isRedacted = event.isRedacted();
   const status = event.status;
   const isMe = event.getSender() === userId;
   const isEdited = !!event.replacingEventId();
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [pickerDirection, setPickerDirection] = useState<'up' | 'down'>('up');
+  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const actionButtonRef = useRef<HTMLButtonElement>(null);
+
+  const emojiTheme = (
+    themeConfig.activePreset === 'icebox' || 
+    themeConfig.activePreset === 'protanopia-light' || 
+    themeConfig.activePreset === 'deuteranopia-light' || 
+    themeConfig.activePreset === 'tritanopia-light' || 
+    themeConfig.activePreset === 'high-contrast-light'
+  ) ? Theme.LIGHT : Theme.DARK;
   
   // Decryption state tracking
   const [, setTick] = useState(0);
@@ -199,24 +208,50 @@ const MessageItem: React.FC<MessageItemProps> = ({
     };
   }, [client, event, isRedacted, updateReactions, updateThreadInfo, isThreadRoot, isThread, forceUpdate]);
 
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     if (showEmojiPicker && actionButtonRef.current) {
       const rect = actionButtonRef.current.getBoundingClientRect();
-      // Defer to avoid cascading renders
-      const timer = setTimeout(() => {
-        if (rect.top < 450) {
-          setPickerDirection('down');
-        } else {
-          setPickerDirection('up');
-        }
-      }, 0);
-      return () => clearTimeout(timer);
+      const pickerHeight = 400;
+      const pickerWidth = isThread ? 280 : 350;
+      const margin = 8;
+      
+      let top = rect.top - pickerHeight - margin;
+      let direction: 'up' | 'down' = 'up';
+
+      // Use a consistent window height or just current viewport
+      const windowHeight = window.innerHeight;
+
+      if (rect.top < pickerHeight + margin + 50) { // Not enough space above
+        top = rect.bottom + margin;
+        direction = 'down';
+      }
+      
+      // Ensure bottom of picker doesn't go off screen when pointing down
+      if (direction === 'down' && top + pickerHeight > windowHeight - margin) {
+        top = windowHeight - pickerHeight - margin;
+      }
+      
+      // Align right edges of picker and button
+      let left = rect.right - pickerWidth;
+      
+      // Ensure it doesn't go off-screen to the left
+      if (left < margin) {
+        left = margin;
+      }
+      
+      // Ensure it doesn't go off-screen to the right
+      if (left + pickerWidth > window.innerWidth - margin) {
+        left = window.innerWidth - pickerWidth - margin;
+      }
+
+      setPickerPosition({ top, left });
     }
-  }, [showEmojiPicker]);
+  }, [showEmojiPicker, isThread]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node) && 
+          actionButtonRef.current && !actionButtonRef.current.contains(e.target as Node)) {
         setShowEmojiPicker(false);
       }
     };
@@ -486,24 +521,40 @@ const MessageItem: React.FC<MessageItemProps> = ({
           >
             <Smile className="h-4 w-4" />
           </button>
-          {showEmojiPicker && (
+          {showEmojiPicker && createPortal(
             <div 
               ref={emojiPickerRef} 
               className={cn(
-                "absolute z-50 animate-in fade-in zoom-in-95 duration-100 shadow-2xl",
-                isThread ? "right-0" : "right-0",
-                pickerDirection === 'up' ? "bottom-full mb-2" : "top-full mt-2"
+                "fixed z-[9999] animate-in fade-in zoom-in-95 duration-100 shadow-2xl",
               )}
+              style={{
+                top: pickerPosition.top,
+                left: pickerPosition.left,
+                width: isThread ? 280 : 350
+              }}
             >
               <EmojiPicker 
                 onEmojiClick={onEmojiClick} 
-                theme={Theme.DARK}
+                theme={emojiTheme}
                 autoFocusSearch={false}
                 lazyLoadEmojis={true}
-                width={isThread ? 280 : 350}
+                width="100%"
                 height={400}
+                style={{
+                  '--epr-bg-color': themeConfig.colors['bg-nav'],
+                  '--epr-category-label-bg-color': themeConfig.colors['bg-nav'],
+                  '--epr-text-color': themeConfig.colors['text-main'],
+                  '--epr-search-input-bg-color': themeConfig.colors['bg-main'],
+                  '--epr-search-input-text-color': themeConfig.colors['text-main'],
+                  '--epr-search-input-placeholder-color': themeConfig.colors['text-muted'],
+                  '--epr-highlight-color': themeConfig.colors['accent-primary'],
+                  '--epr-border-color': themeConfig.colors['border-main'],
+                  '--epr-picker-border-radius': '8px',
+                  '--epr-category-icon-active-color': themeConfig.colors['accent-primary'],
+                } as React.CSSProperties}
               />
-            </div>
+            </div>,
+            document.body
           )}
         </div>
         {!isThreadRoot && !isThread && (

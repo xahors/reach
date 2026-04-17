@@ -133,8 +133,8 @@ const SettingsModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="flex h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-border-main bg-bg-main shadow-2xl animate-in zoom-in-95 duration-300">
+    <div id="settings-modal-overlay" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+      <div data-protected="true" className="flex h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-border-main bg-bg-main shadow-2xl animate-in zoom-in-95 duration-300">
         {/* Sidebar */}
         <div className="w-60 shrink-0 border-r border-border-main bg-bg-sidebar p-6 overflow-y-auto no-scrollbar">
           <div className="mb-8">
@@ -166,6 +166,7 @@ const SettingsModal: React.FC = () => {
               ].map(item => (
                 <button
                   key={item.id}
+                  data-protected={item.id === 'appearance' ? 'true' : undefined}
                   onClick={() => setActiveTab(item.id as 'appearance')}
                   className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === item.id ? 'bg-bg-hover text-text-main ring-1 ring-white/10' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
                 >
@@ -191,6 +192,7 @@ const SettingsModal: React.FC = () => {
         <div className="relative flex-1 overflow-y-auto p-10 bg-bg-main no-scrollbar">
           <button
             onClick={() => setSettingsOpen(false)}
+            data-protected="true"
             className="absolute right-8 top-8 rounded-full border border-border-main p-2 text-text-muted transition hover:bg-bg-hover hover:text-white"
           >
             <X className="h-5 w-5" />
@@ -466,24 +468,71 @@ const SettingsModal: React.FC = () => {
               
               <div className="space-y-8">
                 <section>
-                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Theme Presets</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    {(Object.keys(THEME_PRESETS) as Array<keyof typeof THEME_PRESETS>).map((preset) => (
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Dark Presets</h2>
+                  <div className="grid grid-cols-3 gap-3">
+                    {(['oled', 'classic', 'slate'] as const).map((preset) => (
                       <button
                         key={preset}
                         onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
                         className={`group relative overflow-hidden rounded-xl border p-4 text-left transition-all ${themeConfig.activePreset === preset ? 'border-accent-primary ring-1 ring-accent-primary shadow-lg shadow-accent-primary/10' : 'border-border-main hover:border-text-muted hover:bg-white/5'}`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className={`text-sm font-black uppercase tracking-tighter ${themeConfig.activePreset === preset ? 'text-accent-primary' : 'text-text-main'}`}>
+                          <span className={`text-[10px] font-black uppercase tracking-tighter ${themeConfig.activePreset === preset ? 'text-accent-primary' : 'text-text-main'}`}>
                             {preset}
                           </span>
-                          {themeConfig.activePreset === preset && <CheckCircle2 className="h-4 w-4 text-accent-primary" />}
+                          {themeConfig.activePreset === preset && <CheckCircle2 className="h-3 w-3 text-accent-primary" />}
                         </div>
-                        <div className="mt-3 flex space-x-1">
-                          <div className="h-3 w-3 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
-                          <div className="h-3 w-3 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
-                          <div className="h-3 w-3 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-nav'] }} />
+                        <div className="mt-2 flex space-x-1">
+                          <div className="h-2.5 w-2.5 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
+                          <div className="h-2.5 w-2.5 rounded-full border border-white/10" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Light Presets</h2>
+                  <div className="grid grid-cols-3 gap-3">
+                    {(['icebox'] as const).map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
+                        className={`group relative overflow-hidden rounded-xl border p-4 text-left transition-all ${themeConfig.activePreset === preset ? 'border-accent-primary ring-1 ring-accent-primary shadow-lg shadow-accent-primary/10' : 'border-border-main hover:border-text-muted hover:bg-white/5'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] font-black uppercase tracking-tighter ${themeConfig.activePreset === preset ? 'text-accent-primary' : 'text-text-main'}`}>
+                            {preset}
+                          </span>
+                          {themeConfig.activePreset === preset && <CheckCircle2 className="h-3 w-3 text-accent-primary" />}
+                        </div>
+                        <div className="mt-2 flex space-x-1">
+                          <div className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
+                          <div className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Accessibility Presets</h2>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(['protanopia', 'deuteranopia', 'tritanopia', 'protanopia-light', 'deuteranopia-light', 'tritanopia-light', 'high-contrast-light'] as const).map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => setThemeConfig({ activePreset: preset, colors: THEME_PRESETS[preset] })}
+                        className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${themeConfig.activePreset === preset ? 'border-accent-primary ring-1 ring-accent-primary shadow-lg shadow-accent-primary/10' : 'border-border-main hover:border-text-muted hover:bg-white/5'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[9px] font-black uppercase tracking-tighter ${themeConfig.activePreset === preset ? 'text-accent-primary' : 'text-text-main'}`}>
+                            {preset.replace('-', ' ')}
+                          </span>
+                          {themeConfig.activePreset === preset && <CheckCircle2 className="h-3 w-3 text-accent-primary" />}
+                        </div>
+                        <div className="mt-2 flex space-x-1">
+                          <div className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ backgroundColor: THEME_PRESETS[preset]['bg-main'] }} />
+                          <div className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ backgroundColor: THEME_PRESETS[preset]['accent-primary'] }} />
                         </div>
                       </button>
                     ))}

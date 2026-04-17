@@ -17,7 +17,7 @@ export type ThemeColors = {
 };
 
 export type ThemeConfig = {
-  activePreset: 'oled' | 'classic' | 'slate' | 'icebox' | 'protanopia' | 'deuteranopia' | 'tritanopia' | 'custom';
+  activePreset: 'oled' | 'classic' | 'slate' | 'icebox' | 'protanopia' | 'deuteranopia' | 'tritanopia' | 'protanopia-light' | 'deuteranopia-light' | 'tritanopia-light' | 'high-contrast-light' | 'custom';
   colors: ThemeColors;
   customCSS: string;
 };
@@ -92,6 +92,46 @@ export const THEME_PRESETS: Record<Exclude<ThemeConfig['activePreset'], 'custom'
     'text-muted': '#a0a0a0',
     'border-main': '#333333',
     'accent-primary': '#CC79A7',
+  },
+  'protanopia-light': {
+    'bg-main': '#ffffff',
+    'bg-sidebar': '#f8f8f8',
+    'bg-nav': '#f0f0f0',
+    'bg-hover': '#e0e0e0',
+    'text-main': '#000000',
+    'text-muted': '#555555',
+    'border-main': '#cccccc',
+    'accent-primary': '#0072B2',
+  },
+  'deuteranopia-light': {
+    'bg-main': '#ffffff',
+    'bg-sidebar': '#f8f8f8',
+    'bg-nav': '#f0f0f0',
+    'bg-hover': '#e0e0e0',
+    'text-main': '#000000',
+    'text-muted': '#555555',
+    'border-main': '#cccccc',
+    'accent-primary': '#E69F00',
+  },
+  'tritanopia-light': {
+    'bg-main': '#ffffff',
+    'bg-sidebar': '#f8f8f8',
+    'bg-nav': '#f0f0f0',
+    'bg-hover': '#e0e0e0',
+    'text-main': '#000000',
+    'text-muted': '#555555',
+    'border-main': '#cccccc',
+    'accent-primary': '#CC79A7',
+  },
+  'high-contrast-light': {
+    'bg-main': '#ffffff',
+    'bg-sidebar': '#ffffff',
+    'bg-nav': '#ffffff',
+    'bg-hover': '#eeeeee',
+    'text-main': '#000000',
+    'text-muted': '#000000',
+    'border-main': '#000000',
+    'accent-primary': '#0000ff',
   }
 };
 

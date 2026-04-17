@@ -119,14 +119,22 @@ function App() {
       try {
         if (existingClient) {
           console.log('Client exists but not running, reconnecting...');
-          await matrixService.reconnect();
-          setLoggedIn(true, existingClient.getUserId());
-          callManager.init();
+          try {
+            await matrixService.reconnect();
+            setLoggedIn(true, existingClient.getUserId());
+            callManager.init();
+          } catch (err) {
+            console.error('Reconnection failed:', err);
+            setLoggedIn(false, null);
+          }
         } else {
           const client = await matrixService.loginWithStoredToken();
           if (client) {
             setLoggedIn(true, client.getUserId());
             callManager.init();
+          } else {
+            // Explicitly set logged out if token login failed
+            setLoggedIn(false, null);
           }
         }
       } catch (error) {

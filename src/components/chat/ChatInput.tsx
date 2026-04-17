@@ -36,9 +36,17 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
   const client = useMatrixClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { editingEvent, setEditingEvent, replyingToEvent, setReplyingToEvent } = useAppStore();
+  const { editingEvent, setEditingEvent, replyingToEvent, setReplyingToEvent, themeConfig } = useAppStore();
   
   const { uploadFile, isUploading, uploadProgress } = useFileUpload(client, roomId);
+
+  const emojiTheme = (
+    themeConfig.activePreset === 'icebox' || 
+    themeConfig.activePreset === 'protanopia-light' || 
+    themeConfig.activePreset === 'deuteranopia-light' || 
+    themeConfig.activePreset === 'tritanopia-light' || 
+    themeConfig.activePreset === 'high-contrast-light'
+  ) ? Theme.LIGHT : Theme.DARK;
 
   useEffect(() => {
     if (editingEvent) {
@@ -254,8 +262,20 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
                <div className="absolute bottom-full right-0 mb-4 z-50">
                  <EmojiPicker 
                    onEmojiClick={onEmojiClick} 
-                   theme={Theme.DARK}
+                   theme={emojiTheme}
                    autoFocusSearch={false}
+                   style={{
+                     '--epr-bg-color': themeConfig.colors['bg-nav'],
+                     '--epr-category-label-bg-color': themeConfig.colors['bg-nav'],
+                     '--epr-text-color': themeConfig.colors['text-main'],
+                     '--epr-search-input-bg-color': themeConfig.colors['bg-main'],
+                     '--epr-search-input-text-color': themeConfig.colors['text-main'],
+                     '--epr-search-input-placeholder-color': themeConfig.colors['text-muted'],
+                     '--epr-highlight-color': themeConfig.colors['accent-primary'],
+                     '--epr-border-color': themeConfig.colors['border-main'],
+                     '--epr-picker-border-radius': '8px',
+                     '--epr-category-icon-active-color': themeConfig.colors['accent-primary'],
+                   } as React.CSSProperties}
                  />
                </div>
              )}
