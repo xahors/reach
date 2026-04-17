@@ -607,7 +607,7 @@ const SettingsModal: React.FC = () => {
                   <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Reporting Issues</h2>
                   <div className="grid grid-cols-1 gap-4">
                     <a 
-                      href="https://github.com/durkluf/reach/issues/new?template=bug_report.md" 
+                      href="https://github.com/xahors/reach/issues/new?template=bug_report.md" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center justify-between rounded-xl bg-bg-nav p-6 border border-border-main/30 group hover:border-accent-primary transition-all shadow-sm"
