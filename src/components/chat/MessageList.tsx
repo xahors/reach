@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { MatrixEvent } from 'matrix-js-sdk';
 import MessageItem from './MessageItem';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { useAppStore } from '../../store/useAppStore';
 import { Hash, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
+import { useRoomTyping } from '../../hooks/useRoomTyping';
 
 interface MessageListProps {
   roomId: string;
@@ -12,7 +13,7 @@ interface MessageListProps {
   onPaginate?: () => void;
   canPaginate?: boolean;
   canPaginateForward?: boolean;
-  onScrollBottom?: () => void;
+  onScrollBottom?: (eventId?: string) => void;
   onJumpToEvent?: (id: string) => void;
   onJumpToLive?: () => void;
   readMarkerId?: string;
@@ -31,12 +32,83 @@ const MessageList: React.FC<MessageListProps> = ({
   readMarkerId
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const visibleEventsRef = useRef<Set<string>>(new Set());
+  
   const { highlightedEventId, setHighlightedEventId } = useAppStore();
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(!canPaginateForward);
   const prevMessagesLength = useRef(messages.length);
   const prevRoomId = useRef(roomId);
   const client = useMatrixClient();
   const room = client?.getRoom(roomId);
+  const typingUsers = useRoomTyping(roomId);
+
+  // Setup Intersection Observer
+  useEffect(() => {
+    if (!messages.length || !onScrollBottom) return;
+
+    // Use a debounced update for read markers to prevent loop spam
+    let timeoutId: number | null = null;
+    
+    const updateReadMarker = () => {
+      if (visibleEventsRef.current.size === 0) return;
+      
+      let latestId = '';
+
+      // Optimization: search backwards from end of messages for visible IDs
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const id = messages[i].getId();
+        if (id && visibleEventsRef.current.has(id)) {
+          latestId = id;
+          break;
+        }
+      }
+
+      if (latestId) {
+        onScrollBottom(latestId);
+      }
+    };
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach((entry) => {
+          const eventId = entry.target.getAttribute('data-event-id');
+          if (!eventId) return;
+
+          if (entry.isIntersecting) {
+            if (!visibleEventsRef.current.has(eventId)) {
+              visibleEventsRef.current.add(eventId);
+              changed = true;
+            }
+          } else {
+            if (visibleEventsRef.current.has(eventId)) {
+              visibleEventsRef.current.delete(eventId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          if (timeoutId) window.clearTimeout(timeoutId);
+          timeoutId = window.setTimeout(updateReadMarker, 500);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      observerRef.current?.disconnect();
+    };
+  }, [messages, onScrollBottom]);
+
+  // Ref function to attach observer to each message container
+  const messageRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      observerRef.current?.observe(node);
+    }
+  }, []);
 
   useEffect(() => {
     if (highlightedEventId) {
@@ -186,32 +258,74 @@ const MessageList: React.FC<MessageListProps> = ({
           </div>
         )}
 
-        {groupedMessages.map((group, index) => (
-          <React.Fragment key={group.id}>
-            <MessageItem 
-              event={group.events[0]} 
-              isContinuation={!group.showDetails}
-              onJumpToEvent={onJumpToEvent}
-            />
-            {readMarkerId === group.id && index !== groupedMessages.length - 1 && (
-              <div className="relative my-4 flex items-center px-4">
-                <div className="h-px flex-1 bg-red-500/50" />
-                <span className="mx-4 text-[9px] font-black text-red-500 uppercase tracking-widest bg-bg-main px-2">New Messages</span>
-                <div className="h-px flex-1 bg-red-500/50" />
+        {groupedMessages.map((group, index) => {
+          const isLastRead = readMarkerId === group.id;
+          
+          // Only show banner if there are actual new messages after this one from OTHER users
+          let showBanner = false;
+          if (isLastRead && index < groupedMessages.length - 1) {
+            // Check if any subsequent message is from someone else
+            const hasOtherMessages = groupedMessages.slice(index + 1).some(g => 
+              g.events.some(e => e.getSender() !== client?.getUserId())
+            );
+            showBanner = hasOtherMessages;
+          }
+
+          return (
+            <React.Fragment key={group.id}>
+              <div 
+                ref={messageRef} 
+                data-event-id={group.id}
+                className="w-full"
+              >
+                <MessageItem 
+                  event={group.events[0]} 
+                  isContinuation={!group.showDetails}
+                  onJumpToEvent={onJumpToEvent}
+                />
               </div>
-            )}
-          </React.Fragment>
-        ))}
+              {showBanner && (
+                <div className="relative my-4 flex items-center px-4 animate-in fade-in duration-500">
+                  <div className="h-px flex-1 bg-red-500/50" />
+                  <span className="mx-4 text-[9px] font-black text-red-500 uppercase tracking-widest bg-bg-main px-2">New Messages</span>
+                  <div className="h-px flex-1 bg-red-500/50" />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
 
         {(!shouldScrollToBottom || canPaginateForward) && !loading && (
           <div className="sticky bottom-4 flex justify-center py-4 z-10 pointer-events-none">
             <button 
               onClick={canPaginateForward ? onJumpToLive : scrollToBottom}
-              className="flex items-center space-x-2 rounded-full border border-border-main bg-bg-nav px-4 py-1.5 text-[10px] font-black text-text-muted transition hover:bg-bg-hover hover:text-white uppercase tracking-tighter pointer-events-auto shadow-lg shadow-black/50"
+              className="flex items-center space-x-2 rounded-full border border-border-main bg-bg-nav px-4 py-1.5 text-[10px] font-black text-accent-primary transition hover:bg-bg-hover hover:text-white uppercase tracking-tighter pointer-events-auto shadow-xl shadow-black/50 animate-in slide-in-from-bottom-2 duration-300"
             >
-              <span>{canPaginateForward ? 'New Messages' : 'Jump to Present'}</span>
+              <div className="h-1.5 w-1.5 rounded-full bg-accent-primary animate-pulse" />
+              <span>{canPaginateForward ? 'New Messages Below' : 'Jump to Present'}</span>
               <ChevronDown className="h-3 w-3" />
             </button>
+          </div>
+        )}
+
+        {/* Typing Indicator */}
+        {typingUsers.length > 0 && (
+          <div className="flex items-center space-x-2 px-4 py-2 text-[10px] text-text-muted animate-in slide-in-from-bottom-1 duration-200">
+            <div className="flex space-x-0.5 shrink-0">
+              <div className="h-1 w-1 rounded-full bg-text-muted animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="h-1 w-1 rounded-full bg-text-muted animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="h-1 w-1 rounded-full bg-text-muted animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+            <span className="font-medium italic truncate">
+              {typingUsers.length === 1 ? (
+                <span className="font-bold">{typingUsers[0]}</span>
+              ) : typingUsers.length === 2 ? (
+                <span><span className="font-bold">{typingUsers[0]}</span> and <span className="font-bold">{typingUsers[1]}</span></span>
+              ) : (
+                <span><span className="font-bold">{typingUsers[0]}</span> and {typingUsers.length - 1} others</span>
+              )}
+              {typingUsers.length === 1 ? ' is typing...' : ' are typing...'}
+            </span>
           </div>
         )}
       </div>

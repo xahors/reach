@@ -3,7 +3,7 @@
  * Captures logs in-memory for export to GitHub issues.
  */
 
-type LogLevel = 'log' | 'warn' | 'error' | 'debug';
+type LogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 
 interface LogEntry {
   timestamp: string;
@@ -16,6 +16,7 @@ class Logger {
   private readonly MAX_LOGS = 2000;
   private originalConsole = {
     log: console.log,
+    info: console.info,
     warn: console.warn,
     error: console.error,
     debug: console.debug,
@@ -24,6 +25,12 @@ class Logger {
   constructor() {
     this.init();
   }
+
+  public log(...args: unknown[]) { console.log(...args); }
+  public info(...args: unknown[]) { console.info(...args); }
+  public warn(...args: unknown[]) { console.warn(...args); }
+  public error(...args: unknown[]) { console.error(...args); }
+  public debug(...args: unknown[]) { console.debug(...args); }
 
   private init() {
     // Wrap console methods

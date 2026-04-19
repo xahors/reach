@@ -55,9 +55,17 @@ const ChannelList: React.FC = () => {
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
   const currentSpaceSections = (activeSpaceId && roomSectionOrder[activeSpaceId]) || ['Channels'];
   const lastSelectedSpace = React.useRef<string | null>(activeSpaceId);
+  const isMounted = React.useRef(true);
+
+  React.useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   // Effect to handle space switching and initial room selection
   React.useEffect(() => {
+    if (!isMounted.current) return;
+
     // We only want to auto-select a room if:
     // 1. A space is active
     // 2. We have rooms in that space
@@ -67,8 +75,20 @@ const ChannelList: React.FC = () => {
       
       if (spaceChanged || !activeRoomId) {
         // If the space changed, or we have no active room, select the first one
+        // Use a timeout to avoid setState in render/effect conflict
         const firstRoomId = rooms[0].roomId;
-        setActiveRoomId?.(firstRoomId);
+        if (firstRoomId !== activeRoomId) {
+          const timer = setTimeout(() => {
+            if (isMounted.current) {
+              try {
+                setActiveRoomId?.(firstRoomId);
+              } catch (e) {
+                console.error("Failed to auto-select room:", e);
+              }
+            }
+          }, 0);
+          return () => clearTimeout(timer);
+        }
       }
     }
     
@@ -151,7 +171,7 @@ const ChannelList: React.FC = () => {
     setDraggedRoomId(null);
   };
 
-  const renderRoom = (room: Room, isDM = false) => {
+  const renderRoom = (room: Room, isDM = false, otherUserId?: string) => {
     const isActive = activeRoomId === room.roomId;
     const isDragged = draggedRoomId === room.roomId;
     
@@ -170,6 +190,8 @@ const ChannelList: React.FC = () => {
           room={room}
           isActive={isActive}
           onClick={handleRoomClick}
+          isDM={isDM}
+          otherUserId={otherUserId}
         />
         {!isDM && (
           <button 
@@ -414,7 +436,7 @@ const ChannelList: React.FC = () => {
           <div className="space-y-[2px]">
             {dmsLoading ? (
               <div className="mx-2 h-10 animate-pulse rounded bg-bg-nav" />
-            ) : dms.map(({ room }) => renderRoom(room, true))}
+            ) : dms.map(({ room, otherUserId }) => renderRoom(room, true, otherUserId))}
           </div>
         </div>
       )}

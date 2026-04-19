@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { MatrixEvent, EventStatus, RelationType, RoomEvent, EventType, ThreadEvent, MatrixEventEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
 import { useAppStore } from '../../store/useAppStore';
-import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings, Smile, MessageSquare, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { PhoneOff, Phone, Video, Pin, Trash2, Pencil, Reply, UserPlus, UserMinus, Settings, Smile, MessageSquare, Lock, AlertCircle, Loader2, Key as KeyIcon } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { UrlPreview } from './UrlPreview';
 import { DecryptedMedia } from './DecryptedMedia';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
 import { usePinnedEvents } from '../../hooks/usePinnedEvents';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -44,23 +47,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const client = useMatrixClient();
   const { userId, setEditingEvent, setReplyingToEvent, setThreadOpen, themeConfig, highlightedEventId } = useAppStore();
   const { pinEvent, unpinEvent, isEventPinned, loading: pinLoading } = usePinnedEvents(event.getRoomId() || null);
-  const sender = event.sender;
-  const isRedacted = event.isRedacted();
-  const status = event.status;
-  const isMe = event.getSender() === userId;
-  const isEdited = !!event.replacingEventId();
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
-  const actionButtonRef = useRef<HTMLButtonElement>(null);
-
-  const emojiTheme = (
-    themeConfig.activePreset === 'icebox' || 
-    themeConfig.activePreset === 'protanopia-light' || 
-    themeConfig.activePreset === 'deuteranopia-light' || 
-    themeConfig.activePreset === 'tritanopia-light' || 
-    themeConfig.activePreset === 'high-contrast-light'
-  ) ? Theme.LIGHT : Theme.DARK;
   
   // Decryption state tracking
   const [, setTick] = useState(0);
@@ -77,20 +63,48 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const [readReceipts, setReadReceipts] = useState<{ userId: string, avatarUrl: string | null, name: string }[]>([]);
   const [isVerified, setIsVerified] = useState(false);
 
-  const timestamp = new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fullDate = new Date(event.getTs()).toLocaleString();
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
+  const [requestingKey, setRequestingKey] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const actionButtonRef = useRef<HTMLButtonElement>(null);
 
-  const type = event.getType();
-  const content = event.getContent();
+  const emojiTheme = (
+    themeConfig.activePreset === 'icebox' || 
+    themeConfig.activePreset === 'protanopia-light' || 
+    themeConfig.activePreset === 'deuteranopia-light' || 
+    themeConfig.activePreset === 'tritanopia-light' || 
+    themeConfig.activePreset === 'high-contrast-light'
+  ) ? Theme.LIGHT : Theme.DARK;
+
+  // Wrapped in try-catch to prevent crash if SDK event methods fail
+  const eventData = useMemo(() => {
+    try {
+      return {
+        sender: event.sender,
+        isRedacted: event.isRedacted(),
+        status: event.status,
+        isMe: event.getSender() === userId,
+        isEdited: !!event.replacingEventId(),
+        timestamp: new Date(event.getTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        fullDate: new Date(event.getTs()).toLocaleString(),
+        type: event.getType(),
+        content: event.getContent() || {},
+        id: event.getId(),
+        roomId: event.getRoomId()
+      };
+    } catch (err) {
+      console.error("Failed to parse event data:", err);
+      return null;
+    }
+  }, [event, userId]);
 
   const updateReactions = useCallback(() => {
-    if (!client) return;
-    const room = client.getRoom(event.getRoomId()) as unknown as IMatrixRoom | null;
+    if (!client || !eventData?.id || !eventData?.roomId) return;
+    const room = client.getRoom(eventData.roomId) as unknown as IMatrixRoom | null;
     if (!room || !room.relations) return;
 
-    const eventId = event.getId();
-    if (!eventId) return;
-
+    const eventId = eventData.id;
     const relations = room.relations.getChildEventsForEvent(
       eventId, 
       RelationType.Annotation, 
@@ -122,11 +136,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
     });
     
     setReactions(grouped);
-  }, [client, event, userId]);
+  }, [client, eventData, userId]);
 
   const updateReadReceipts = useCallback(() => {
-    if (!client) return;
-    const room = client.getRoom(event.getRoomId());
+    if (!client || !eventData?.roomId) return;
+    const room = client.getRoom(eventData.roomId);
     if (!room) return;
 
     const receipts = room.getReceiptsForEvent(event);
@@ -147,15 +161,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
       });
 
     setReadReceipts(members);
-  }, [client, event, userId]);
+  }, [client, event, userId, eventData]);
 
   const updateThreadInfo = useCallback(() => {
-    if (!client) return;
-    const room = client.getRoom(event.getRoomId());
+    if (!client || !eventData?.id || !eventData?.roomId) return;
+    const room = client.getRoom(eventData.roomId);
     if (!room) return;
 
-    const eventId = event.getId();
-    if (!eventId) return;
+    const eventId = eventData.id;
 
     // 1. Try to get from SDK Thread object
     const thread = room.getThread(eventId);
@@ -180,13 +193,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
         setLatestReply(rels[rels.length - 1]);
       }
     }
-  }, [client, event]);
+  }, [client, eventData]);
 
   useEffect(() => {
-    if (!client || isRedacted) return;
+    if (!client || !eventData || eventData.isRedacted) return;
     
     // Defer initial data fetching to avoid synchronous setState in render
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       updateReactions();
       updateReadReceipts();
       if (!isThreadRoot && !isThread) updateThreadInfo();
@@ -197,17 +210,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
         Promise.all([
           crypto.getDeviceVerificationStatus(userId, deviceId),
           crypto.getCrossSigningStatus()
-        ]).then(([status, crossSigning]) => {
-          const verified = !!status?.isVerified();
+        ]).then(([vStatus, crossSigning]) => {
+          const verified = !!vStatus?.isVerified();
           const hasMasterKey = !!crossSigning?.privateKeysCachedLocally?.masterKey;
-          // If we aren't verified OR we don't have our own keys, we're in a "waiting" state
           setIsVerified(verified && hasMasterKey);
-        });
+        }).catch(console.error);
       }
     }, 0);
 
-    const room = client.getRoom(event.getRoomId());
-    const eventId = event.getId();
+    const room = client.getRoom(eventData.roomId!);
+    const eventId = eventData.id;
     
     const onTimeline = (rel: MatrixEvent) => {
       const relation = rel.getRelation();
@@ -221,7 +233,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
     };
 
     const onReceipt = () => {
-      // Any receipt in the room might affect this message's visibility in others' read lists
       updateReadReceipts();
     };
 
@@ -252,7 +263,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
     event.on(MatrixEventEvent.Decrypted, onDecrypted);
 
     return () => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       room?.removeListener(RoomEvent.Timeline, onTimeline);
       room?.removeListener(RoomEvent.Redaction, onRedaction);
       room?.removeListener(RoomEvent.Receipt, onReceipt);
@@ -260,70 +271,61 @@ const MessageItem: React.FC<MessageItemProps> = ({
       room?.removeListener(ThreadEvent.NewReply, onThreadUpdate);
       event.removeListener(MatrixEventEvent.Decrypted, onDecrypted);
     };
-  }, [client, event, isRedacted, updateReactions, updateThreadInfo, updateReadReceipts, isThreadRoot, isThread, forceUpdate, userId]);
+  }, [client, event, eventData, updateReactions, updateThreadInfo, updateReadReceipts, isThreadRoot, isThread, forceUpdate, userId]);
 
   React.useLayoutEffect(() => {
-    if (showEmojiPicker && actionButtonRef.current) {
-      const rect = actionButtonRef.current.getBoundingClientRect();
-      const pickerHeight = 400;
-      const pickerWidth = isThread ? 280 : 350;
-      const margin = 8;
-      
-      let top = rect.top - pickerHeight - margin;
-      let direction: 'up' | 'down' = 'up';
+    if (!showEmojiPicker || !actionButtonRef.current) return;
+    
+    const rect = actionButtonRef.current.getBoundingClientRect();
+    const pickerHeight = 400;
+    const pickerWidth = isThread ? 280 : 350;
+    const margin = 8;
+    
+    let top = rect.top - pickerHeight - margin;
+    let direction: 'up' | 'down' = 'up';
 
-      // Use a consistent window height or just current viewport
-      const windowHeight = window.innerHeight;
+    const windowHeight = window.innerHeight;
 
-      if (rect.top < pickerHeight + margin + 50) { // Not enough space above
-        top = rect.bottom + margin;
-        direction = 'down';
-      }
-      
-      // Ensure bottom of picker doesn't go off screen when pointing down
-      if (direction === 'down' && top + pickerHeight > windowHeight - margin) {
-        top = windowHeight - pickerHeight - margin;
-      }
-      
-      // Align right edges of picker and button
-      let left = rect.right - pickerWidth;
-      
-      // Ensure it doesn't go off-screen to the left
-      if (left < margin) {
-        left = margin;
-      }
-      
-      // Ensure it doesn't go off-screen to the right
-      if (left + pickerWidth > window.innerWidth - margin) {
-        left = window.innerWidth - pickerWidth - margin;
-      }
-
-      setPickerPosition({ top, left });
+    if (rect.top < pickerHeight + margin + 50) { 
+      top = rect.bottom + margin;
+      direction = 'down';
     }
+    
+    if (direction === 'down' && top + pickerHeight > windowHeight - margin) {
+      top = windowHeight - pickerHeight - margin;
+    }
+    
+    let left = rect.right - pickerWidth;
+    if (left < margin) left = margin;
+    if (left + pickerWidth > window.innerWidth - margin) {
+      left = window.innerWidth - pickerWidth - margin;
+    }
+
+    setPickerPosition({ top, left });
   }, [showEmojiPicker, isThread]);
 
   useEffect(() => {
+    if (!showEmojiPicker) return;
+
     const handleClickOutside = (e: MouseEvent) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node) && 
           actionButtonRef.current && !actionButtonRef.current.contains(e.target as Node)) {
         setShowEmojiPicker(false);
       }
     };
-    if (showEmojiPicker) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    
+    document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showEmojiPicker]);
 
   const toggleReaction = async (key: string) => {
-    if (!client || isRedacted) return;
-    const roomId = event.getRoomId();
-    const eventId = event.getId();
+    if (!client || !eventData || eventData.isRedacted) return;
+    const roomId = eventData.roomId;
+    const eventId = eventData.id;
     if (!roomId || !eventId) return;
 
     const reaction = reactions[key];
     if (reaction?.me) {
-      // Find my reaction event and redact it to "remove" the reaction
       const room = client.getRoom(roomId) as unknown as IMatrixRoom | null;
       if (!room || !room.relations) return;
 
@@ -343,7 +345,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
         await client.redactEvent(roomId, myReactionEvent.getId()!);
       }
     } else {
-      // Send a new reaction event
       const reactionContent = {
         'm.relates_to': {
           rel_type: RelationType.Annotation,
@@ -361,6 +362,101 @@ const MessageItem: React.FC<MessageItemProps> = ({
     toggleReaction(emojiData.emoji);
     setShowEmojiPicker(false);
   };
+
+  const handleRequestKey = async () => {
+    if (!client || requestingKey) return;
+    
+    const crypto = matrixService.getCrypto();
+    if (!crypto) return;
+
+    setRequestingKey(true);
+    try {
+      const wireContent = event.getWireContent();
+      const roomId = event.getRoomId();
+      const sessionId = wireContent?.session_id;
+      const senderKey = wireContent?.sender_key;
+
+      if (roomId && sessionId && senderKey) {
+        // @ts-expect-error - Newer SDK feature
+        if (typeof crypto.requestRoomKey === 'function') {
+          // @ts-expect-error - Newer SDK feature
+          await crypto.requestRoomKey(roomId, sessionId, senderKey);
+        }
+      }
+      
+      // Keep state for a bit to prevent double-clicks
+      setTimeout(() => setRequestingKey(false), 5000);
+    } catch (err) {
+      console.error("Failed to request key:", err);
+      setRequestingKey(false);
+    }
+  };
+
+  const renderMessageBody = () => {
+    if (!eventData) return null;
+    const { isRedacted, content, status } = eventData;
+
+    try {
+      if (isRedacted) return <span className="text-text-muted italic opacity-50">This message was deleted.</span>;
+      
+      const isFormatted = content.format === 'org.matrix.custom.html' && content.formatted_body;
+      const bodyText = isFormatted ? content.formatted_body : (content.body || '');
+      
+      if (!bodyText || typeof bodyText !== 'string') return null;
+
+      return (
+        <div className={cn(
+          "text-sm leading-relaxed tracking-tight prose prose-invert max-w-none",
+          "prose-p:my-0 prose-pre:bg-bg-nav prose-pre:border prose-pre:border-border-main prose-code:text-accent-primary prose-code:bg-accent-primary/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none",
+          "prose-a:text-accent-primary prose-a:no-underline hover:prose-a:underline",
+          "prose-blockquote:border-l-accent-primary prose-blockquote:bg-bg-nav/30 prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:rounded-r",
+          status === EventStatus.SENDING ? "opacity-50" : ""
+        )}>
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm]} 
+            rehypePlugins={isFormatted ? [rehypeRaw] : []}
+            components={{
+              a: ({ href, children }) => (
+                <UrlPreview url={href || ''}>
+                  <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+                </UrlPreview>
+              ),
+              code: ({ children, className, ...props }) => {
+                const match = /language-(\w+)/.exec(className || '');
+                return match ? (
+                  <pre className="p-4 rounded-lg bg-bg-nav border border-border-main my-2 overflow-x-auto">
+                    <code className={className} {...props}>{children}</code>
+                  </pre>
+                ) : (
+                  <code className="bg-accent-primary/10 text-accent-primary px-1 py-0.5 rounded font-mono text-xs" {...props}>
+                    {children}
+                  </code>
+                );
+              }
+            }}
+          >
+            {bodyText}
+          </ReactMarkdown>
+          {eventData.isEdited && (
+            <span className="ml-1 text-[9px] text-text-muted select-none uppercase tracking-tighter font-bold opacity-60">(edited)</span>
+          )}
+        </div>
+      );
+    } catch (err) {
+      console.error("Failed to render message body:", err);
+      return <span className="text-red-400 italic text-xs">Error rendering message</span>;
+    }
+  };
+
+  if (!eventData) {
+    return (
+      <div className="px-4 py-2 text-[10px] text-red-400/50 italic mx-4 bg-red-500/5 border border-red-500/10 rounded my-1">
+        Error loading message content
+      </div>
+    );
+  }
+
+  const { sender, isRedacted, isMe, isEdited, timestamp, fullDate, type, content } = eventData;
 
   const isStateEvent = type === 'm.room.member' || 
                        type === 'm.room.name' || 
@@ -418,15 +514,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
       text = `${senderName} changed the permissions for this room`;
     }
 
-    const isHighlighted = highlightedEventId === event.getId();
+    const isHighlightedLocal = highlightedEventId === eventData.id;
 
     if (text) {
       return (
         <div 
-          id={"message-" + event.getId()}
+          id={"message-" + eventData.id}
           className={cn(
             "group relative flex items-center px-4 py-0.5 transition-all border-l-2 border-transparent hover:border-border-main",
-            isHighlighted ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/30"
+            isHighlightedLocal ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/30"
           )}
         >
           <div className="mr-4 flex h-8 w-8 shrink-0 items-center justify-center">
@@ -457,14 +553,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
        callText = 'Answered the call';
     }
 
-    const isHighlighted = highlightedEventId === event.getId();
+    const isHighlightedLocal = highlightedEventId === eventData.id;
 
     return (
       <div 
-        id={"message-" + event.getId()}
+        id={"message-" + eventData.id}
         className={cn(
           "group relative mt-2 flex px-4 py-3 transition-all border border-border-main/50 rounded-xl mx-4",
-          isHighlighted ? "bg-accent-primary/20 border-accent-primary animate-pulse duration-1000" : "bg-bg-nav/20 hover:bg-bg-hover"
+          isHighlightedLocal ? "bg-accent-primary/20 border-accent-primary animate-pulse duration-1000" : "bg-bg-nav/20 hover:bg-bg-hover"
         )}
       >
         <div className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-nav border border-border-main">
@@ -492,16 +588,29 @@ const MessageItem: React.FC<MessageItemProps> = ({
   if (isDecryptionFailure || isUndecrypted) {
     const showWaiting = isUndecrypted || !isVerified;
     body = (
-      <div className={cn(
-        "flex items-center space-x-2 px-2 py-1 rounded border w-fit",
-        showWaiting 
-          ? "text-text-muted bg-bg-nav border-border-main animate-pulse" 
-          : "text-red-400 bg-red-500/10 border-red-500/20"
-      )}>
-        {showWaiting ? <Lock className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-        <span className="text-xs font-medium italic">
-          {showWaiting ? "Waiting for security key..." : "Decryption error"}
-        </span>
+      <div className="flex flex-col space-y-2">
+        <div className={cn(
+          "flex items-center space-x-2 px-2 py-1 rounded border w-fit",
+          showWaiting 
+            ? "text-text-muted bg-bg-nav border-border-main animate-pulse" 
+            : "text-red-400 bg-red-500/10 border-red-500/20"
+        )}>
+          {showWaiting ? <Lock className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+          <span className="text-xs font-medium italic">
+            {showWaiting ? "Waiting for security key..." : "Decryption error"}
+          </span>
+        </div>
+        
+        {showWaiting && (
+          <button 
+            onClick={handleRequestKey}
+            disabled={requestingKey}
+            className="flex items-center space-x-1 text-[9px] font-black uppercase text-accent-primary hover:underline transition disabled:opacity-50"
+          >
+            {requestingKey ? <Loader2 className="h-2 w-2 animate-spin" /> : <KeyIcon className="h-2 w-2" />}
+            <span>{requestingKey ? 'Requesting Key...' : 'Request key from other devices'}</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -524,13 +633,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
       />
     );
   }
-  // If we have media and the body is just the filename, we can skip rendering the body text
   const shouldShowBody = !isRedacted && (!media || (body && typeof body === 'string' && body !== content.info?.filename && body !== content.file?.name) || isUndecrypted || isDecryptionFailure);
 
   const relatesTo = (content['m.relates_to'] || {}) as unknown as Record<string, unknown>;
   const isReply = !!relatesTo['m.in_reply_to'] && !relatesTo['m.thread'];
   const replyEventId = (relatesTo['m.in_reply_to'] as Record<string, string>)?.event_id;
-  const room = client?.getRoom(event.getRoomId());
+  const room = client?.getRoom(eventData.roomId!);
   const replyEvent = replyEventId ? room?.findEventById(replyEventId) : null;
 
   const getAvatar = () => {
@@ -542,46 +650,19 @@ const MessageItem: React.FC<MessageItemProps> = ({
   };
 
   const avatarUrl = getAvatar();
-
-  const renderBodyWithLinks = (text: React.ReactNode) => {
-    if (!text || typeof text !== 'string') return text;
-    
-    // Split by https:// links. Matches https:// followed by non-whitespace, 
-    // excluding trailing punctuation like periods or commas.
-    const parts = text.split(/(https:\/\/\S+?(?=[.,;:!?'"()[\]{}]*(?:\s|$)))/g);
-    
-    return parts.map((part, i) => {
-      if (part.startsWith('https://')) {
-        return (
-          <UrlPreview key={i} url={part}>
-            <a 
-              href={part} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-accent-primary hover:underline break-all"
-            >
-              {part}
-            </a>
-          </UrlPreview>
-        );
-      }
-      return part;
-    });
-  };
-const isHighlighted = highlightedEventId === event.getId();
+  const isHighlightedLocal = highlightedEventId === eventData.id;
 
   return (
     <div
-      id={"message-" + event.getId()}
+      id={"message-" + eventData.id}
       onMouseLeave={() => setShowEmojiPicker(false)}
       className={cn(
         "group relative flex px-4 transition-all border-l-2 border-transparent",
         isContinuation ? "py-0.5" : "mt-4 py-1",
         isEdited && "bg-accent-primary/5 border-l-accent-primary/30",
-        isHighlighted ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/20 hover:border-accent-primary/20"
+        isHighlightedLocal ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/20 hover:border-accent-primary/20"
       )}
     >
-      {/* Context Actions */}
       <div className="absolute -top-4 right-4 z-10 flex items-center space-x-0.5 rounded-lg bg-bg-sidebar border border-border-main p-0.5 opacity-0 shadow-xl group-hover:opacity-100 transition-all duration-100">
         <div className="relative">
           <button 
@@ -633,7 +714,7 @@ const isHighlighted = highlightedEventId === event.getId();
         </div>
         {!isThreadRoot && !isThread && (
           <button 
-            onClick={() => setThreadOpen(true, event.getId())}
+            onClick={() => setThreadOpen(true, eventData.id)}
             className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-white rounded transition" 
             title="Reply in Thread"
           >
@@ -658,18 +739,18 @@ const isHighlighted = highlightedEventId === event.getId();
         )}
         <button 
           disabled={pinLoading}
-          onClick={() => isEventPinned(event.getId() || '') ? unpinEvent(event.getId()!) : pinEvent(event.getId()!)}
+          onClick={() => isEventPinned(eventData.id || '') ? unpinEvent(eventData.id!) : pinEvent(eventData.id!)}
           className={cn(
             "p-1.5 rounded transition",
-            isEventPinned(event.getId() || '') ? "text-accent-primary bg-accent-primary/10 shadow-sm" : "text-text-muted hover:bg-bg-hover hover:text-white",
+            isEventPinned(eventData.id || '') ? "text-accent-primary bg-accent-primary/10 shadow-sm" : "text-text-muted hover:bg-bg-hover hover:text-white",
             pinLoading && "opacity-50 cursor-not-allowed"
           )} 
-          title={isEventPinned(event.getId() || '') ? "Unpin" : "Pin"}
+          title={isEventPinned(eventData.id || '') ? "Unpin" : "Pin"}
         >
           {pinLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <Pin className={cn("h-4 w-4", isEventPinned(event.getId() || '') && "fill-current")} />
+            <Pin className={cn("h-4 w-4", isEventPinned(eventData.id || '') && "fill-current")} />
           )}
         </button>
         <button className="p-1.5 text-red-400 hover:bg-red-500/20 rounded transition" title="Delete">
@@ -720,7 +801,6 @@ const isHighlighted = highlightedEventId === event.getId();
             <span className="text-[10px] font-mono text-text-muted uppercase tracking-tighter" title={fullDate}>
               {timestamp}
             </span>
-            {/* Read Receipts */}
             {readReceipts.length > 0 && (
               <div className="flex -space-x-1 overflow-hidden opacity-40 hover:opacity-100 transition-opacity">
                 {readReceipts.slice(0, 5).map(receipt => (
@@ -760,21 +840,9 @@ const isHighlighted = highlightedEventId === event.getId();
         )}
 
         <div className="flex flex-col">
-          {shouldShowBody && (
-            <div className={cn(
-              "text-sm leading-relaxed tracking-tight",
-              isRedacted ? "text-text-muted italic opacity-50" : "text-text-main",
-              status === EventStatus.SENDING ? "opacity-50" : ""
-            )}>
-              {isRedacted ? body : renderBodyWithLinks(body)}
-              {isEdited && (
-                <span className="ml-1 text-[9px] text-text-muted select-none uppercase tracking-tighter font-bold opacity-60">(edited)</span>
-              )}
-            </div>
-          )}
+          {shouldShowBody && renderMessageBody()}
           {media}
 
-          {/* Reactions */}
           {Object.keys(reactions).length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {Object.entries(reactions).map(([key, data]) => (
@@ -798,10 +866,9 @@ const isHighlighted = highlightedEventId === event.getId();
             </div>
           )}
 
-          {/* Thread Summary */}
           {!isThreadRoot && !isThread && threadReplyCount > 0 && (
             <button 
-              onClick={() => setThreadOpen(true, event.getId())}
+              onClick={() => setThreadOpen(true, eventData.id!)}
               className="mt-2 flex items-center space-x-2 group/thread w-full max-w-sm rounded-lg border border-border-main bg-bg-nav/30 p-2 transition hover:bg-bg-nav/50 hover:border-accent-primary/30"
             >
               <div className="flex -space-x-2 overflow-hidden shrink-0">

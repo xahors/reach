@@ -147,7 +147,7 @@ interface AppState {
   incomingCall: MatrixCall | null;
   isSettingsOpen: boolean;
   isExploreOpen: boolean;
-  activeSettingsTab: 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support';
+  activeSettingsTab: 'account' | 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support';
   isChannelDetailsOpen: boolean;
   channelDetailsTab: 'members' | 'settings';
   isThreadOpen: boolean;
@@ -240,7 +240,7 @@ export const useAppStore = create<AppState>()(
       incomingCall: null,
       isSettingsOpen: false,
       isExploreOpen: false,
-      activeSettingsTab: 'security',
+      activeSettingsTab: 'account',
       isChannelDetailsOpen: false,
       channelDetailsTab: 'members',
       isThreadOpen: false,

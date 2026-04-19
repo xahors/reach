@@ -9,35 +9,47 @@ export const useSpaceRooms = (spaceId: string | null) => {
 
   const updateRooms = useCallback(() => {
     if (!client || !spaceId) {
-      Promise.resolve().then(() => {
+      setTimeout(() => {
         setRooms([]);
         setLoading(false);
-      });
+      }, 0);
       return;
     }
 
-    const space = client.getRoom(spaceId);
-    if (!space) {
-      Promise.resolve().then(() => setLoading(false));
-      return;
+    try {
+      const space = client.getRoom(spaceId);
+      if (!space) {
+        setTimeout(() => setLoading(false), 0);
+        return;
+      }
+
+      // Get children of the space
+      const childrenEvents = space.currentState.getStateEvents('m.space.child');
+      if (!childrenEvents) {
+        setTimeout(() => {
+          setRooms([]);
+          setLoading(false);
+        }, 0);
+        return;
+      }
+
+      const childRoomIds = childrenEvents
+        .filter((event) => event.getContent()?.via)
+        .map((event) => event.getStateKey())
+        .filter(Boolean);
+
+      const spaceRooms = childRoomIds
+        .map((id) => id ? client.getRoom(id!) : null)
+        .filter((room): room is Room => room !== null);
+
+      setTimeout(() => {
+        setRooms(spaceRooms);
+        setLoading(false);
+      }, 0);
+    } catch (err) {
+      console.error("Error updating space rooms:", err);
+      setTimeout(() => setLoading(false), 0);
     }
-
-    // Get children of the space
-    const childrenEvents = space.currentState.getStateEvents('m.space.child');
-    if (!childrenEvents) return;
-
-    const childRoomIds = childrenEvents
-      .filter((event) => event.getContent().via)
-      .map((event) => event.getStateKey());
-
-    const spaceRooms = childRoomIds
-      .map((id) => id ? client.getRoom(id) : null)
-      .filter((room): room is Room => room !== null);
-
-    Promise.resolve().then(() => {
-      setRooms(spaceRooms);
-      setLoading(false);
-    });
   }, [client, spaceId]);
 
   useEffect(() => {

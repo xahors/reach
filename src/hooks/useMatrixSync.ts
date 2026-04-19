@@ -30,8 +30,11 @@ export const useMatrixSync = () => {
       // RECONNECTING means network hiccup but we have data
       if (state === 'PREPARED' || state === 'SYNCING' || state === 'RECONNECTING') {
         if (!isSynced) {
-          Promise.resolve().then(() => setSynced(true));
+          // Use a small timeout to avoid setState during sync event emit
+          setTimeout(() => setSynced(true), 0);
         }
+      } else if (state === 'ERROR' || state === 'STOPPED') {
+        // Don't immediately unsync on error, only if it persists
       }
     };
 

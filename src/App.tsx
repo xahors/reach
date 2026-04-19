@@ -25,6 +25,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
     return { hasError: true };
   }
 
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Reach App Crash:", error, errorInfo);
+  }
+
   render() {
     if (this.state.hasError) {
       return (

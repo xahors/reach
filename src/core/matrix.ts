@@ -205,6 +205,13 @@ class MatrixService {
         useIndexedDB: true,
         cryptoDatabasePrefix: `reach-v1-${deviceId}`
       });
+      
+      const crypto = this.client.getCrypto();
+      if (crypto) {
+        // Ensure we trust other devices signed by our own master key
+        crypto.setTrustCrossSignedDevices(true);
+      }
+      
       console.log("Rust crypto initialized successfully.");
     } catch (err: unknown) {
       const e = err as Error;
@@ -238,20 +245,12 @@ class MatrixService {
         console.log(`Sync state: ${prevState} -> ${state}`, data?.error ? `Error: ${data.error}` : "");
       });
 
-      const syncFilter = new sdk.Filter(this.client.getUserId()!);
-      syncFilter.setDefinition({
-        room: {
-          timeline: { limit: 50 },
-          state: { lazy_load_members: true }
-        }
-      });
-
       try {
+        // Use simpler startClient options - SDK handles defaults and crypto requirements better this way
         await this.client.startClient({ 
           initialSyncLimit: 50,
           lazyLoadMembers: true,
-          pollTimeout: 20000,
-          filter: syncFilter,
+          pollTimeout: 30000,
         });
       } catch (err) {
         console.error("SDK failed to start client sync loop:", err);

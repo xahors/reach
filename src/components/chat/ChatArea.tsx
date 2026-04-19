@@ -167,7 +167,7 @@ const ChatArea: React.FC = () => {
   } = useAppStore();
   const client = useMatrixClient();
   const roomId = activeRoomId;
-  const { messages, loading, paginate, canPaginate, canPaginateForward, markAsRead, readMarkerId, jumpToEvent, jumpToLive } = useRoomMessages(roomId);
+  const { messages, loading, paginate, canPaginate, canPaginateForward, markAsRead, readMarkerId, jumpToEvent, jumpToLive, unreadCount, highlightCount } = useRoomMessages(roomId);
   const { hasGroupCall, participantCount, isCallActive } = useGroupCall(roomId);
   const { results, isSearching, performSearch } = useSearch();
   const [searchQuery, setSearchQuery] = useState('');
@@ -412,6 +412,19 @@ const ChatArea: React.FC = () => {
             </div>
           ) : (
             <>
+              {/* Unread Banner */}
+              {unreadCount > 0 && (
+                <div className="absolute top-2 left-0 right-0 z-20 flex justify-center pointer-events-none">
+                  <button 
+                    onClick={() => readMarkerId && jumpToEvent(readMarkerId)}
+                    className="flex items-center space-x-2 rounded-full bg-accent-primary px-4 py-1.5 text-[10px] font-black text-bg-main transition hover:scale-105 active:scale-95 pointer-events-auto shadow-2xl shadow-accent-primary/20 animate-in slide-in-from-top-4 duration-500 uppercase tracking-widest"
+                  >
+                    <Bell className="h-3 w-3 fill-current" />
+                    <span>{unreadCount} UNREAD {unreadCount === 1 ? 'MESSAGE' : 'MESSAGES'} {highlightCount > 0 ? `(${highlightCount} MENTIONS)` : ''}</span>
+                  </button>
+                </div>
+              )}
+
               {/* Message List */}
               <MessageList 
                 key={activeRoomId}

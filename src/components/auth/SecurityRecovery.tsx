@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { matrixService } from '../../core/matrix';
 import { ClientEvent } from 'matrix-js-sdk';
-import { ShieldAlert, Key, X, Loader2 } from 'lucide-react';
+import { ShieldAlert, Key as KeyIcon, X, Loader2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const SecurityRecovery: React.FC = () => {
@@ -17,7 +17,6 @@ const SecurityRecovery: React.FC = () => {
   const checkRecovery = useCallback(async () => {
     if (!client || isCheckingRef.current) return;
     
-    // We can check local cache status immediately, but server status needs a client
     isCheckingRef.current = true;
 
     try {
@@ -28,15 +27,12 @@ const SecurityRecovery: React.FC = () => {
       const deviceId = client.getDeviceId();
       if (!userId || !deviceId) return;
 
-      // 1. Check if this device is verified
       const verificationStatus = await crypto.getDeviceVerificationStatus(userId, deviceId);
       const isVerified = !!verificationStatus?.isVerified();
 
-      // 2. Check cross-signing status (checks if private keys are in local IndexedDB)
       const crossSigningStatus = await crypto.getCrossSigningStatus?.();
       const hasMasterKey = !!crossSigningStatus?.privateKeysCachedLocally?.masterKey;
       
-      // 3. Check key backup trust
       const backupInfo = await crypto.getKeyBackupInfo();
       let isBackupTrusted = false;
       if (backupInfo) {
@@ -44,10 +40,6 @@ const SecurityRecovery: React.FC = () => {
         isBackupTrusted = !!trust.trusted;
       }
 
-      // We need recovery if:
-      // - Device is not verified
-      // - OR we don't have our master key (can't verify others or decrypt history)
-      // - OR we have a backup but don't trust it yet
       const needs = !isVerified || !hasMasterKey || (!!backupInfo && !isBackupTrusted);
       
       console.log('Security check:', { isVerified, hasMasterKey, isBackupTrusted, needs });
@@ -92,39 +84,89 @@ const SecurityRecovery: React.FC = () => {
         setStatus('Restoring cross-signing...');
         await crypto.bootstrapCrossSigning({ setupNewCrossSigning: false });
 
-        // NEW: Explicitly verify this device now that we have cross-signing keys
         const userId = client?.getUserId();
         const deviceId = client?.getDeviceId();
         if (userId && deviceId) {
           setStatus('Verifying this session...');
           await crypto.setDeviceVerified(userId, deviceId, true);
           
-          // Ensure the SDK updates its internal trust state
-          // @ts-expect-error - Newer SDK feature
-          if (typeof crypto.checkOwnCrossSigningTrust === 'function') {
-            // @ts-expect-error - Newer SDK feature
-            await crypto.checkOwnCrossSigningTrust();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const anyCrypto = crypto as any;
+          if (typeof anyCrypto.checkOwnCrossSigningTrust === 'function') {
+            await anyCrypto.checkOwnCrossSigningTrust();
           }
         }
 
         setStatus('Restoring message backup...');
-        if (crypto.loadSessionBackupPrivateKeyFromSecretStorage) {
+        if (typeof crypto.loadSessionBackupPrivateKeyFromSecretStorage === 'function') {
             await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
         }
-        await crypto.restoreKeyBackup();
         
-        // CRITICAL: Retry decryption for the current session's timeline
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const anyCrypto = crypto as any;
+        if (typeof anyCrypto.checkKeyBackupAndEnable === 'function') {
+          await anyCrypto.checkKeyBackupAndEnable();
+        }
+
+        const backupInfo = await crypto.getKeyBackupInfo();
+        if (backupInfo) {
+          try {
+            await crypto.restoreKeyBackup();
+          } catch (backupErr) {
+            console.warn("Failed to restore key backup (normal if empty):", backupErr);
+          }
+        }
+        
         if (client) {
           setStatus('Success! Retrying decryption...');
-          // @ts-expect-error - Newer SDK feature
-          if (typeof client.retryDecryption === 'function') {
-            // @ts-expect-error - Newer SDK feature
-            client.retryDecryption();
+          
+          // 1. Global retry
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const anyClient = client as any;
+          if (typeof anyClient.retryDecryption === 'function') {
+            anyClient.retryDecryption();
+          }
+
+          // 2. Force room-by-room retry for better reliability
+          try {
+            const joinedRooms = await client.getJoinedRooms();
+            const roomIds = joinedRooms.joined_rooms;
+            
+            for (const roomId of roomIds) {
+              const room = client.getRoom(roomId);
+              if (room) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const anyRoom = room as any;
+                if (typeof anyRoom.retryDecryption === 'function') {
+                  anyRoom.retryDecryption();
+                }
+
+                // 3. Proactively request missing keys for recent failed events
+                const undecryptedEvents = room.getLiveTimeline().getEvents().filter(ev => 
+                  ev.isEncrypted() && (ev.isDecryptionFailure() || !ev.clearEvent)
+                );
+
+                for (const event of undecryptedEvents) {
+                   const wire = event.getWireContent();
+                   const sessionId = wire?.session_id;
+                   const senderKey = wire?.sender_key;
+                   if (sessionId && senderKey) {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const anyCryptoForEvent = crypto as any;
+                      if (typeof anyCryptoForEvent.requestRoomKey === 'function') {
+                        anyCryptoForEvent.requestRoomKey(roomId, sessionId, senderKey);
+                      }
+                   }
+                }
+              }
+            }
+          } catch (roomErr) {
+            console.warn("Failed room-level decryption retry:", roomErr);
           }
         }
 
         setStatus('Success! Messages will decrypt shortly.');
-        setNeedsRecovery(false);
+        setTimeout(() => setNeedsRecovery(false), 2000);
       });
     } catch (err) {
       console.error(err);
@@ -156,7 +198,7 @@ const SecurityRecovery: React.FC = () => {
 
           <form onSubmit={handleRecover} className="space-y-3">
             <div className="relative">
-              <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted opacity-50" />
+              <KeyIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted opacity-50" />
               <input 
                 type="password"
                 value={recoveryKey}

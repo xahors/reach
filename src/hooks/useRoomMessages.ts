@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, PendingEventOrdering, EventTimelineSet, RelationType } from 'matrix-js-sdk';
+import { Room, MatrixEvent, RoomEvent, TimelineWindow, MatrixEventEvent, Direction, ClientEvent, EventTimelineSet, RelationType } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
 import { useAppStore } from '../store/useAppStore';
@@ -32,34 +32,33 @@ export const useRoomMessages = (roomId: string | null) => {
     const room = client.getRoom(roomId);
     if (!room) return [];
     
-    let events: MatrixEvent[] = [];
-    
-    const windowEvents = timelineWindow.current?.getEvents() || [];
-    
-    // Use the window events if the window has been initialized
+    // Get base events from window or live timeline
+    let baseEvents: MatrixEvent[] = [];
     if (timelineWindow.current) {
-      events = [...windowEvents];
+      baseEvents = [...timelineWindow.current.getEvents()];
     } else {
-      events = [...room.getLiveTimeline().getEvents()];
+      baseEvents = [...room.getLiveTimeline().getEvents()];
     }
 
-    // Always check for local echoes if they aren't in the window yet
+    // Only include pending events manually if ordering is 'detached'.
+    // If it's 'chronological', the SDK handles this automatically in the timeline.
     // @ts-expect-error: internal property access
-    if (room.opts?.pendingEventOrdering === PendingEventOrdering.Detached) {
-      const pending = room.getPendingEvents();
-      if (pending && pending.length > 0) {
-        const eventIds = new Set(events.map(e => e.getId()).filter(Boolean));
-        const txnIds = new Set(events.map(e => e.getTxnId()).filter(Boolean));
+    if (room.opts?.pendingEventOrdering === 'detached') {
+      const pendingEvents = room.getPendingEvents();
+      if (pendingEvents && pendingEvents.length > 0) {
+        const eventIds = new Set(baseEvents.map(e => e.getId()).filter(Boolean));
+        const txnIds = new Set(baseEvents.map(e => e.getTxnId()).filter(Boolean));
 
-        pending.forEach(pe => {
+        pendingEvents.forEach(pe => {
+          // Only add if not already in baseEvents (by ID or Transaction ID)
           if (!eventIds.has(pe.getId()) && !txnIds.has(pe.getTxnId())) {
-            events.push(pe);
+            baseEvents.push(pe);
           }
         });
       }
     }
 
-    return events;
+    return baseEvents;
   }, [client, roomId]);
 
   const jumpToEvent = useCallback(async (eventId: string) => {
@@ -157,7 +156,12 @@ export const useRoomMessages = (roomId: string | null) => {
       return isDisplayable && !isReplacement && !isThreadReply;
     });
     
-    filtered.sort((a, b) => a.getTs() - b.getTs());
+    // Sort by origin server timestamp, fall back to a high number for local echoes
+    filtered.sort((a, b) => {
+      const aTs = a.getTs() || Number.MAX_SAFE_INTEGER;
+      const bTs = b.getTs() || Number.MAX_SAFE_INTEGER;
+      return aTs - bTs;
+    });
     setMessages(filtered);
     
     if (timelineWindow.current) {
@@ -404,26 +408,55 @@ export const useRoomMessages = (roomId: string | null) => {
     }
   }, [client, roomId, refreshMessages]);
 
-  const markAsRead = useCallback(async () => {
+  const markAsRead = useCallback(async (explicitEventId?: string) => {
     if (!client || !roomId || messages.length === 0 || loading || !sendReadReceipts) return;
     
-    const lastMessage = messages[messages.length - 1];
-    const eventId = lastMessage.getId();
+    let targetMessage: MatrixEvent | undefined;
+    if (explicitEventId) {
+      targetMessage = messages.find(m => m.getId() === explicitEventId);
+    } else {
+      targetMessage = messages[messages.length - 1];
+    }
+
+    if (!targetMessage) return;
+    const eventId = targetMessage.getId();
     
-    if (!eventId || lastMessage.isSending() || lastMessage.status === 'not_sent') return;
+    if (!eventId || targetMessage.isSending() || targetMessage.status === 'not_sent') return;
     
+    // Only move read marker forward
+    const room = client.getRoom(roomId);
+    const myUserId = client.getUserId();
+    if (room && myUserId) {
+      const currentReadEventId = room.getEventReadUpTo(myUserId);
+      if (currentReadEventId) {
+        const currentReadEvent = room.findEventById(currentReadEventId);
+        if (currentReadEvent && currentReadEvent.getTs() >= targetMessage.getTs()) {
+          // Already read past this point
+          return;
+        }
+      }
+    }
+
     const now = Date.now();
-    if (eventId === lastSentReceiptIdRef.current || (now - lastReceiptTimeRef.current < 3000)) return;
+    if (eventId === lastSentReceiptIdRef.current || (now - lastReceiptTimeRef.current < 2000)) return;
 
     try {
       lastSentReceiptIdRef.current = eventId;
       lastReceiptTimeRef.current = now;
-      await client.setRoomReadMarkers(roomId, eventId, lastMessage);
+      await client.setRoomReadMarkers(roomId, eventId, targetMessage);
+      // Move read marker locally so the UI updates immediately
+      setReadMarkerId(eventId);
     } catch (error) {
       console.error('Failed to update read markers:', error);
       lastSentReceiptIdRef.current = null;
     }
   }, [client, roomId, messages, loading, sendReadReceipts]);
 
-  return { messages, loading, paginate, canPaginate, canPaginateForward, redactAllMyMessages, markAsRead, readMarkerId, jumpToEvent, jumpToLive };
+  const room = roomId ? client?.getRoom(roomId) : null;
+  // @ts-expect-error: Matrix SDK type mismatch for notification count type
+  const unreadCount = room?.getUnreadNotificationCount('total') || 0;
+  // @ts-expect-error: Matrix SDK type mismatch for notification count type
+  const highlightCount = room?.getUnreadNotificationCount('highlight') || 0;
+
+  return { messages, loading, paginate, canPaginate, canPaginateForward, redactAllMyMessages, markAsRead, readMarkerId, jumpToEvent, jumpToLive, unreadCount, highlightCount };
 };
