@@ -48,3 +48,9 @@ desktop.ini
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Playwright Additions
+.playwright-mcp/
+test-playwright.mjs
+tests/**/*.png
+*.png
