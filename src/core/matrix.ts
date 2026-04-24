@@ -82,6 +82,7 @@ class MatrixService {
       useAuthorizationHeader: true,
       timelineSupport: true,
       cryptoCallbacks: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         getSecretStorageKey: async ({ keys }: { keys: Record<string, any> }, name: string) => {
           console.info(`Secret storage requested key for secret: ${name}`);
 

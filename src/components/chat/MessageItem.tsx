@@ -659,8 +659,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
       className={cn(
         "group relative flex px-4 transition-all border-l-2 border-transparent",
         isContinuation ? "py-0.5" : "mt-4 py-1",
-        isEdited && "bg-accent-primary/5 border-l-accent-primary/30",
-        isHighlightedLocal ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/20 hover:border-accent-primary/20"
+        isEventPinned(eventData.id || '') && "bg-accent-primary/10 border-l-accent-primary",
+        !isEventPinned(eventData.id || '') && isEdited && "bg-accent-primary/5 border-l-accent-primary/30",
+        isHighlightedLocal ? "bg-accent-primary/20 border-l-accent-primary animate-pulse duration-1000" : "hover:bg-bg-hover/20"
       )}
     >
       <div className="absolute -top-4 right-4 z-10 flex items-center space-x-0.5 rounded-lg bg-bg-sidebar border border-border-main p-0.5 opacity-0 shadow-xl group-hover:opacity-100 transition-all duration-100">
@@ -773,10 +774,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
           <span className="opacity-0 group-hover:opacity-100 text-[9px] text-text-muted font-mono mt-1 transition-opacity">
             {timestamp}
           </span>
+          {isEventPinned(eventData.id || '') && (
+            <Pin className="h-2.5 w-2.5 text-accent-primary fill-current mt-0.5" />
+          )}
           {readReceipts.length > 0 && (
             <div className="flex -space-x-1 mt-1 opacity-40 group-hover:opacity-100 transition-opacity">
                {readReceipts.slice(0, 3).map(receipt => (
-                  <div key={receipt.userId} className="h-3.5 w-3.5 rounded-full border border-bg-main bg-bg-nav overflow-hidden" title={`Read by ${receipt.name}`}>
+                  <div key={receipt.userId} className="h-3.5 w-3.5 rounded-full border border-white/20 bg-bg-nav overflow-hidden" title={`Read by ${receipt.name}`}>
                     {receipt.avatarUrl ? (
                       <img src={receipt.avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
@@ -801,10 +805,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
             <span className="text-[10px] font-mono text-text-muted uppercase tracking-tighter" title={fullDate}>
               {timestamp}
             </span>
+            {isEventPinned(eventData.id || '') && (
+              <Pin className="h-2.5 w-2.5 text-accent-primary fill-current shrink-0" />
+            )}
             {readReceipts.length > 0 && (
               <div className="flex -space-x-1 overflow-hidden opacity-40 hover:opacity-100 transition-opacity">
                 {readReceipts.slice(0, 5).map(receipt => (
-                  <div key={receipt.userId} className="h-4 w-4 rounded-full border border-bg-main bg-bg-nav overflow-hidden" title={`Read by ${receipt.name}`}>
+                  <div key={receipt.userId} className="h-4 w-4 rounded-full border border-white/20 bg-bg-nav overflow-hidden" title={`Read by ${receipt.name}`}>
                     {receipt.avatarUrl ? (
                       <img src={receipt.avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
@@ -813,7 +820,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   </div>
                 ))}
                 {readReceipts.length > 5 && (
-                  <div className="flex h-4 w-4 items-center justify-center rounded-full border border-bg-main bg-bg-nav text-[6px] text-text-muted font-bold" title={`${readReceipts.length - 5} more`}>
+                  <div className="flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-bg-nav text-[6px] text-text-muted font-bold" title={`${readReceipts.length - 5} more`}>
                     +{readReceipts.length - 5}
                   </div>
                 )}
@@ -875,7 +882,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             >
               <div className="flex -space-x-2 overflow-hidden shrink-0">
                 {latestReply && (
-                  <div className="h-6 w-6 rounded-full border-2 border-bg-main bg-bg-sidebar overflow-hidden">
+                  <div className="h-6 w-6 rounded-full border-2 border-white/20 bg-bg-sidebar overflow-hidden">
                     {client && latestReply.sender?.getAvatarUrl(client.getHomeserverUrl(), 24, 24, 'crop', undefined, true) ? (
                       <img src={latestReply.sender.getAvatarUrl(client.getHomeserverUrl(), 24, 24, 'crop', undefined, true)!} alt="" className="h-full w-full object-cover" />
                     ) : (
