@@ -1,0 +1,51 @@
+- generic [ref=e2]:
+  - generic [ref=e44]:
+    - generic [ref=e45]:
+      - button [ref=e47]:
+        - generic:
+          - img
+        - img [ref=e48]
+      - generic [ref=e51]:
+        - button "My Longest Yeah Boi Ever" [ref=e53]:
+          - img "My Longest Yeah Boi Ever" [ref=e55]
+        - button "MikuCore" [ref=e57]:
+          - img "MikuCore" [ref=e59]
+      - button [ref=e60]:
+        - img [ref=e61]
+    - generic [ref=e62]:
+      - button "Direct Messages" [ref=e63]:
+        - generic [ref=e64]: Direct Messages
+        - img [ref=e65]
+      - generic [ref=e67]:
+        - generic [ref=e68]: Direct Messages
+        - generic [ref=e69]:
+          - button "☆ crobo ☆" [ref=e71]:
+            - generic [ref=e76]: ☆ crobo ☆
+          - button "D devvz" [ref=e78]:
+            - generic [ref=e79]:
+              - generic [ref=e81]: D
+              - generic [ref=e83]: devvz
+      - generic [ref=e84]:
+        - generic [ref=e85] [cursor=pointer]:
+          - generic [ref=e86]: D
+          - generic [ref=e88]:
+            - generic [ref=e89]: durkluf
+            - generic [ref=e90]: Online
+        - button [ref=e92]:
+          - img [ref=e93]
+    - generic [ref=e96]: Select a channel to start chatting
+  - generic [ref=e98]:
+    - generic [ref=e99]:
+      - generic [ref=e100]:
+        - img [ref=e101]
+        - heading "Verify Session" [level=3] [ref=e103]
+      - button [ref=e104]:
+        - img [ref=e105]
+    - generic [ref=e108]:
+      - paragraph [ref=e109]: Access your encrypted messages by entering your Security Key.
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - img [ref=e112]
+          - textbox "Recovery Key..." [ref=e116]
+        - button "Confirm Identity" [disabled] [ref=e117]
+      - button "I'll do this later" [ref=e118]

@@ -41,3 +41,10 @@ CLAUDE.md
 *.sw?
 thumbs.db
 desktop.ini
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

@@ -840,7 +840,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
         )}
 
         <div className="flex flex-col">
-          {shouldShowBody && renderMessageBody()}
+          {shouldShowBody && (
+            (isDecryptionFailure || isUndecrypted || isRedacted) ? body : renderMessageBody()
+          )}
           {media}
 
           {Object.keys(reactions).length > 0 && (

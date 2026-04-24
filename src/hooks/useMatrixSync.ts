@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ClientEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 import { useAppStore } from '../store/useAppStore';
+import { matrixService } from '../core/matrix';
 
 export const useMatrixSync = () => {
   const client = useMatrixClient();
@@ -32,6 +33,11 @@ export const useMatrixSync = () => {
         if (!isSynced) {
           // Use a small timeout to avoid setState during sync event emit
           setTimeout(() => setSynced(true), 0);
+        }
+
+        if (state === 'SYNCING') {
+          // Proactively try to decrypt old messages
+          matrixService.retryDecryption();
         }
       } else if (state === 'ERROR' || state === 'STOPPED') {
         // Don't immediately unsync on error, only if it persists

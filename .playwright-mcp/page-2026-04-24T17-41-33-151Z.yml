@@ -1,0 +1,36 @@
+- generic [ref=e3]:
+  - heading "Reach Key Recovery Tool" [level=1] [ref=e4]
+  - paragraph [ref=e5]: This tool extracts orphaned decryption keys from previous login sessions stored on this device and imports them into your active session.
+  - generic [ref=e6]:
+    - heading "Databases Found:" [level=2] [ref=e7]
+    - list [ref=e8]:
+      - listitem [ref=e9]: reach-v1-45vaAXk5g6::matrix-sdk-crypto
+      - listitem [ref=e10]: reach-v1-9M8k6l74rs::matrix-sdk-crypto
+      - listitem [ref=e11]: reach-v1-MMHJ7huJwt::matrix-sdk-crypto
+      - listitem [ref=e12]: reach-v1-U78XKcLwhP::matrix-sdk-crypto
+      - listitem [ref=e13]: reach-v1-bnhVzn26VI::matrix-sdk-crypto
+  - button "Start Recovery" [active] [ref=e14] [cursor=pointer]
+  - generic [ref=e15]:
+    - heading "Logs:" [level=2] [ref=e16]
+    - generic [ref=e17]:
+      - generic [ref=e18]: "> Initializing recovery tool..."
+      - generic [ref=e19]: "> Found 5 potential crypto databases."
+      - generic [ref=e20]: "> Current active device ID: MMHJ7huJwt"
+      - generic [ref=e21]: "> Initializing current client (MMHJ7huJwt) for import..."
+      - generic [ref=e22]: "> Attempting to recover keys from orphaned device: 45vaAXk5g6"
+      - generic [ref=e23]: "> Exporting keys from 45vaAXk5g6..."
+      - generic [ref=e24]: "> Exported 17 keys from 45vaAXk5g6. Importing..."
+      - generic [ref=e25]: "> Successfully imported keys from 45vaAXk5g6."
+      - generic [ref=e26]: "> Attempting to recover keys from orphaned device: 9M8k6l74rs"
+      - generic [ref=e27]: "> Exporting keys from 9M8k6l74rs..."
+      - generic [ref=e28]: "> Exported 17 keys from 9M8k6l74rs. Importing..."
+      - generic [ref=e29]: "> Successfully imported keys from 9M8k6l74rs."
+      - generic [ref=e30]: "> Attempting to recover keys from orphaned device: U78XKcLwhP"
+      - generic [ref=e31]: "> Exporting keys from U78XKcLwhP..."
+      - generic [ref=e32]: "> Exported 16 keys from U78XKcLwhP. Importing..."
+      - generic [ref=e33]: "> Successfully imported keys from U78XKcLwhP."
+      - generic [ref=e34]: "> Attempting to recover keys from orphaned device: bnhVzn26VI"
+      - generic [ref=e35]: "> Exporting keys from bnhVzn26VI..."
+      - generic [ref=e36]: "> No keys found in bnhVzn26VI"
+      - generic [ref=e37]: "> Recovery complete. Attempted to import 50 old keys."
+      - generic [ref=e38]: "> You can now return to the main app to view your decrypted messages!"

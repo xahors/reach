@@ -1,0 +1,39 @@
+- generic [ref=e3]:
+  - heading "Reach Key Recovery Tool" [level=1] [ref=e4]
+  - paragraph [ref=e5]: This tool extracts orphaned decryption keys from previous login sessions stored on this device and imports them into your active session.
+  - generic [ref=e6]:
+    - heading "Databases Found:" [level=2] [ref=e7]
+    - list [ref=e8]:
+      - listitem [ref=e9]: reach-v1-45vaAXk5g6::matrix-sdk-crypto
+      - listitem [ref=e10]: reach-v1-9M8k6l74rs::matrix-sdk-crypto
+      - listitem [ref=e11]: reach-v1-DEVICE::matrix-sdk-crypto
+      - listitem [ref=e12]: reach-v1-MMHJ7huJwt::matrix-sdk-crypto
+      - listitem [ref=e13]: reach-v1-U78XKcLwhP::matrix-sdk-crypto
+      - listitem [ref=e14]: reach-v1-bnhVzn26VI::matrix-sdk-crypto
+  - button "Start Recovery" [active] [ref=e15] [cursor=pointer]
+  - generic [ref=e16]:
+    - heading "Logs:" [level=2] [ref=e17]
+    - generic [ref=e18]:
+      - generic [ref=e19]: "> Initializing recovery tool..."
+      - generic [ref=e20]: "> Found 6 potential crypto databases."
+      - generic [ref=e21]: "> Current active device ID: MMHJ7huJwt"
+      - generic [ref=e22]: "> Initializing current client (MMHJ7huJwt) for import..."
+      - generic [ref=e23]: "> Attempting to recover keys from orphaned device: 45vaAXk5g6"
+      - generic [ref=e24]: "> Exporting keys from 45vaAXk5g6..."
+      - generic [ref=e25]: "> Exported 17 keys from 45vaAXk5g6. Importing..."
+      - generic [ref=e26]: "> Successfully imported keys from 45vaAXk5g6."
+      - generic [ref=e27]: "> Attempting to recover keys from orphaned device: 9M8k6l74rs"
+      - generic [ref=e28]: "> Exporting keys from 9M8k6l74rs..."
+      - generic [ref=e29]: "> Exported 17 keys from 9M8k6l74rs. Importing..."
+      - generic [ref=e30]: "> Successfully imported keys from 9M8k6l74rs."
+      - generic [ref=e31]: "> Attempting to recover keys from orphaned device: DEVICE"
+      - generic [ref=e32]: "> Failed to process DEVICE: the account in the store doesn't match the account in the constructor: expected @user:example.com:DEVICE, got @durkluf:longestyeahboiever.space:DEVICE"
+      - generic [ref=e33]: "> Attempting to recover keys from orphaned device: U78XKcLwhP"
+      - generic [ref=e34]: "> Exporting keys from U78XKcLwhP..."
+      - generic [ref=e35]: "> Exported 16 keys from U78XKcLwhP. Importing..."
+      - generic [ref=e36]: "> Successfully imported keys from U78XKcLwhP."
+      - generic [ref=e37]: "> Attempting to recover keys from orphaned device: bnhVzn26VI"
+      - generic [ref=e38]: "> Exporting keys from bnhVzn26VI..."
+      - generic [ref=e39]: "> No keys found in bnhVzn26VI"
+      - generic [ref=e40]: "> Recovery complete. Attempted to import 50 old keys."
+      - generic [ref=e41]: "> You can now return to the main app to view your decrypted messages!"

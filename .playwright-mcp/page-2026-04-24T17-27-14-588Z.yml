@@ -1,0 +1,35 @@
+- generic [ref=e48]:
+  - generic [ref=e49]:
+    - button [ref=e51]:
+      - generic:
+        - img
+      - img [ref=e52]
+    - generic [ref=e55]:
+      - button "My Longest Yeah Boi Ever" [ref=e57]:
+        - img "My Longest Yeah Boi Ever" [ref=e59]
+      - button "MikuCore" [ref=e61]:
+        - img "MikuCore" [ref=e63]
+    - button [ref=e64]:
+      - img [ref=e65]
+  - generic [ref=e66]:
+    - button "Direct Messages" [ref=e67]:
+      - generic [ref=e68]: Direct Messages
+      - img [ref=e69]
+    - generic [ref=e71]:
+      - generic [ref=e72]: Direct Messages
+      - generic [ref=e73]:
+        - button "☆ crobo ☆" [ref=e75]:
+          - generic [ref=e80]: ☆ crobo ☆
+        - button "D devvz" [ref=e82]:
+          - generic [ref=e83]:
+            - generic [ref=e85]: D
+            - generic [ref=e87]: devvz
+    - generic [ref=e88]:
+      - generic [ref=e89] [cursor=pointer]:
+        - generic [ref=e90]: D
+        - generic [ref=e92]:
+          - generic [ref=e93]: durkluf
+          - generic [ref=e94]: Online
+      - button [ref=e96]:
+        - img [ref=e97]
+  - generic [ref=e100]: Select a channel to start chatting

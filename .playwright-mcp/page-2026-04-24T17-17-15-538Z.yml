@@ -1,0 +1,27 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - img [ref=e7]
+    - heading "Reach" [level=1] [ref=e9]
+  - generic [ref=e11]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - img [ref=e14]
+        - text: Homeserver
+      - textbox "https://matrix.org" [ref=e17]: https://longestyeahboiever.space
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - img [ref=e20]
+        - text: Username
+      - textbox "user" [ref=e23]: durkluf
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - img [ref=e26]
+        - text: Password
+      - textbox "••••••••" [ref=e29]: WUshD@Zx8T*JxntHAzZN
+    - button "Authenticating..." [disabled] [ref=e41]:
+      - img [ref=e42]
+      - text: Authenticating...
+  - link "GitHub" [ref=e35] [cursor=pointer]:
+    - /url: https://github.com/xahors/reach
+    - img [ref=e36]
+    - generic [ref=e40]: GitHub

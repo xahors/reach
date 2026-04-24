@@ -82,87 +82,75 @@ const SecurityRecovery: React.FC = () => {
         if (!crypto) throw new Error('Crypto not initialized');
 
         setStatus('Restoring cross-signing...');
+        // First, ensure we've cleared any old, invalid trust state
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const anyCrypto = crypto as any;
+
         await crypto.bootstrapCrossSigning({ setupNewCrossSigning: false });
+        console.log("Cross-signing bootstrapped.");
+
+        // CRITICAL: Explicitly load cross-signing keys from secret storage
+        // This is what actually brings the Master Key into the local cache (hasMasterKey: true)
+        const cryptoWithLoad = crypto as { loadCrossSigningKeysFromSecretStorage?: () => Promise<void> };
+        if (typeof cryptoWithLoad.loadCrossSigningKeysFromSecretStorage === 'function') {
+          await cryptoWithLoad.loadCrossSigningKeysFromSecretStorage();
+          console.log("Cross-signing keys loaded from secret storage.");
+        }
 
         const userId = client?.getUserId();
         const deviceId = client?.getDeviceId();
+        
         if (userId && deviceId) {
           setStatus('Verifying this session...');
+          // Force mark the current device as verified once the keys are restored
           await crypto.setDeviceVerified(userId, deviceId, true);
           
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const anyCrypto = crypto as any;
+          // Ensure we trust other devices signed by our restored master key
+          crypto.setTrustCrossSignedDevices(true);
+          
           if (typeof anyCrypto.checkOwnCrossSigningTrust === 'function') {
             await anyCrypto.checkOwnCrossSigningTrust();
+            console.log("Cross-signing trust checked.");
           }
         }
 
         setStatus('Restoring message backup...');
+        // This is CRITICAL for decryption to work
         if (typeof crypto.loadSessionBackupPrivateKeyFromSecretStorage === 'function') {
             await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
+            console.log("Backup private key loaded from secret storage.");
         }
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const anyCrypto = crypto as any;
         if (typeof anyCrypto.checkKeyBackupAndEnable === 'function') {
           await anyCrypto.checkKeyBackupAndEnable();
+          console.log("Key backup enabled.");
         }
 
         const backupInfo = await crypto.getKeyBackupInfo();
         if (backupInfo) {
+          console.log(`Restoring backup version: ${backupInfo.version}`);
           try {
-            await crypto.restoreKeyBackup();
-          } catch (backupErr) {
-            console.warn("Failed to restore key backup (normal if empty):", backupErr);
+            // In modern SDK, no-args restoreKeyBackup uses the loaded private key
+            const restoreResult = await crypto.restoreKeyBackup();
+            console.log(`Restored ${restoreResult.imported} keys from backup.`);
+          } catch (err: unknown) {
+            const backupErr = err as { httpStatus?: number; data?: { errcode?: string } };
+            if (backupErr.httpStatus === 404 || backupErr.data?.errcode === 'M_NOT_FOUND') {
+              console.info("No keys found in current backup version.");
+            } else {
+              console.warn("Failed to restore key backup:", backupErr);
+            }
           }
         }
         
         if (client) {
           setStatus('Success! Retrying decryption...');
           
-          // 1. Global retry
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const anyClient = client as any;
-          if (typeof anyClient.retryDecryption === 'function') {
-            anyClient.retryDecryption();
-          }
-
-          // 2. Force room-by-room retry for better reliability
-          try {
-            const joinedRooms = await client.getJoinedRooms();
-            const roomIds = joinedRooms.joined_rooms;
-            
-            for (const roomId of roomIds) {
-              const room = client.getRoom(roomId);
-              if (room) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const anyRoom = room as any;
-                if (typeof anyRoom.retryDecryption === 'function') {
-                  anyRoom.retryDecryption();
-                }
-
-                // 3. Proactively request missing keys for recent failed events
-                const undecryptedEvents = room.getLiveTimeline().getEvents().filter(ev => 
-                  ev.isEncrypted() && (ev.isDecryptionFailure() || !ev.clearEvent)
-                );
-
-                for (const event of undecryptedEvents) {
-                   const wire = event.getWireContent();
-                   const sessionId = wire?.session_id;
-                   const senderKey = wire?.sender_key;
-                   if (sessionId && senderKey) {
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const anyCryptoForEvent = crypto as any;
-                      if (typeof anyCryptoForEvent.requestRoomKey === 'function') {
-                        anyCryptoForEvent.requestRoomKey(roomId, sessionId, senderKey);
-                      }
-                   }
-                }
-              }
-            }
-          } catch (roomErr) {
-            console.warn("Failed room-level decryption retry:", roomErr);
-          }
+          // CRITICAL: Delay slightly to let Rust SDK settle before retrying decryption
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Use our improved service method
+          await matrixService.retryDecryption();
         }
 
         setStatus('Success! Messages will decrypt shortly.');

@@ -62,6 +62,11 @@ const SettingsModal: React.FC = () => {
     new?: string;
     confirm?: string;
   }>({});
+  const [e2eeStatus, setE2eeStatus] = useState<{
+    isVerified: boolean;
+    hasMasterKey: boolean;
+    isBackupTrusted: boolean;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeTab = activeSettingsTab as string;
@@ -70,7 +75,8 @@ const SettingsModal: React.FC = () => {
   useEffect(() => {
     if (isSettingsOpen && activeTab === 'account' && client) {
       const userId = client.getUserId();
-      if (userId) {
+      const deviceId = client.getDeviceId();
+      if (userId && deviceId) {
         // Fetch Profile Info
         client.getProfileInfo(userId).then(info => {
           if (info) {
@@ -80,6 +86,30 @@ const SettingsModal: React.FC = () => {
         }).catch(err => {
           reachLogger.error("Failed to fetch profile info:", err);
         });
+
+        // Fetch E2EE Status
+        const crypto = matrixService.getCrypto();
+        if (crypto) {
+          Promise.all([
+            crypto.getDeviceVerificationStatus(userId, deviceId),
+            crypto.getCrossSigningStatus?.(),
+            crypto.getKeyBackupInfo(),
+          ]).then(async ([verification, crossSigning, backupInfo]) => {
+            let backupTrusted = false;
+            if (backupInfo) {
+              const trust = await crypto.isKeyBackupTrusted(backupInfo);
+              backupTrusted = !!trust.trusted;
+            }
+
+            setE2eeStatus({
+              isVerified: !!verification?.isVerified(),
+              hasMasterKey: !!crossSigning?.privateKeysCachedLocally?.masterKey,
+              isBackupTrusted: backupTrusted
+            });
+          }).catch(err => {
+             reachLogger.error("Failed to fetch E2EE status:", err);
+          });
+        }
 
         // Fetch Email Info
         client.getThreePids().then(pids => {
@@ -204,11 +234,11 @@ const SettingsModal: React.FC = () => {
 
       // Standard UIA compliance: First try without auth, catch 401, then send auth with session
       try {
-        await client.setPassword({}, newPassword);
+        await client.setPassword({}, newPassword, false);
       } catch (err: unknown) {
         const error = err as { httpStatus?: number; status?: number; data?: { session?: string }; message?: string };
         const httpStatus = error.httpStatus || error.status;
-        
+
         if (httpStatus === 401 && error.data && error.data.session) {
           const authDict = {
             type: 'm.login.password',
@@ -219,12 +249,11 @@ const SettingsModal: React.FC = () => {
             password: currentPassword,
             session: error.data.session
           };
-          await client.setPassword(authDict, newPassword);
+          await client.setPassword(authDict, newPassword, false);
         } else {
           throw err;
         }
-      }
-      
+      }      
       reachLogger.info("Password changed successfully");
       setPasswordStatus({ message: 'Password changed successfully! You may need to log in again on other devices.', isError: false });
       setCurrentPassword('');
@@ -321,16 +350,26 @@ const SettingsModal: React.FC = () => {
         if (typeof crypto.loadSessionBackupPrivateKeyFromSecretStorage === 'function') {
             await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
         }
-        await crypto.restoreKeyBackup();
+        
+        try {
+          await crypto.restoreKeyBackup();
+        } catch (err: unknown) {
+          const backupErr = err as { httpStatus?: number; data?: { errcode?: string } };
+          if (backupErr.httpStatus === 404 || backupErr.data?.errcode === 'M_NOT_FOUND') {
+            console.info("No keys found in current backup version.");
+          } else {
+            console.warn("Failed to restore key backup:", backupErr);
+          }
+        }
 
         // CRITICAL: Retry decryption for the current session's timeline
         if (client) {
           setStatus('Success! Retrying decryption...');
-          // @ts-expect-error - Newer SDK feature
-          if (typeof client.retryDecryption === 'function') {
-            // @ts-expect-error - Newer SDK feature
-            client.retryDecryption();
-          }
+          
+          // Give Rust SDK a moment to process the restored keys
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          await matrixService.retryDecryption();
         }
       });
       setStatus('Successfully restored E2EE keys. Messages will decrypt shortly.');
@@ -541,6 +580,50 @@ const SettingsModal: React.FC = () => {
                         </div>
                       </div>
                     )}
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Encryption & Security</h2>
+                  <div className="rounded-xl bg-bg-nav p-6 border border-border-main/50 space-y-4">
+                    <div className="flex items-center justify-between py-2 border-b border-border-main/30">
+                      <div className="flex items-center space-x-3">
+                        <Shield className={cn("h-4 w-4", e2eeStatus?.isVerified ? "text-green-500" : "text-red-400")} />
+                        <div>
+                          <p className="text-xs font-bold text-white uppercase tracking-tight">Session Verification</p>
+                          <p className="text-[10px] text-text-muted">Current device trust status</p>
+                        </div>
+                      </div>
+                      <span className={cn("px-2 py-0.5 rounded text-[9px] font-black uppercase", e2eeStatus?.isVerified ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400")}>
+                        {e2eeStatus?.isVerified ? 'Verified' : 'Unverified'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-2 border-b border-border-main/30">
+                      <div className="flex items-center space-x-3">
+                        <Key className={cn("h-4 w-4", e2eeStatus?.hasMasterKey ? "text-green-500" : "text-yellow-500")} />
+                        <div>
+                          <p className="text-xs font-bold text-white uppercase tracking-tight">Cross-Signing Keys</p>
+                          <p className="text-[10px] text-text-muted">Master key local availability</p>
+                        </div>
+                      </div>
+                      <span className={cn("px-2 py-0.5 rounded text-[9px] font-black uppercase", e2eeStatus?.hasMasterKey ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-500")}>
+                        {e2eeStatus?.hasMasterKey ? 'Restored' : 'Not Loaded'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-2">
+                      <div className="flex items-center space-x-3">
+                        <Lock className={cn("h-4 w-4", e2eeStatus?.isBackupTrusted ? "text-green-500" : "text-red-400")} />
+                        <div>
+                          <p className="text-xs font-bold text-white uppercase tracking-tight">Message Backup</p>
+                          <p className="text-[10px] text-text-muted">Remote key storage trust</p>
+                        </div>
+                      </div>
+                      <span className={cn("px-2 py-0.5 rounded text-[9px] font-black uppercase", e2eeStatus?.isBackupTrusted ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400")}>
+                        {e2eeStatus?.isBackupTrusted ? 'Trusted' : 'Untrusted'}
+                      </span>
+                    </div>
                   </div>
                 </section>
 
