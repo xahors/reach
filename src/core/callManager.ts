@@ -245,6 +245,20 @@ class CallManager {
     }
   }
 
+  async joinVoiceChannel(roomId: string) {
+    this.warmupAudioContext();
+    const client = matrixService.getClient();
+    if (!client) return;
+
+    const groupCall = client.getGroupCallForRoom(roomId);
+    
+    // In Discord style, we only auto-join if a call is ALREADY active or if the room is a voice room.
+    // For now, if there's any group call object, we enter it as voice.
+    if (groupCall && groupCall.state !== GroupCallState.Entered) {
+      await this.enterGroupCall(roomId, 'voice');
+    }
+  }
+
   acceptCall() {
     if (this.currentCall) {
       this.playFeedbackSound('connect');

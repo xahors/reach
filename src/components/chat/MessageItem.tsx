@@ -13,6 +13,7 @@ import { usePinnedEvents } from '../../hooks/usePinnedEvents';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { getRoleColor } from '../../utils/roleColors';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -651,6 +652,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
   const avatarUrl = getAvatar();
   const isHighlightedLocal = highlightedEventId === eventData.id;
+  
+  const member = room?.getMember(event.getSender() || '');
+  const roleColor = member ? getRoleColor(member.powerLevel) : undefined;
 
   return (
     <div
@@ -796,10 +800,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
       <div className="flex flex-1 flex-col overflow-hidden">
         {!isContinuation && (
           <div className="flex items-baseline space-x-2">
-            <span className={cn(
-              "cursor-pointer text-sm font-black tracking-tight hover:underline",
-              isMe ? "text-accent-primary" : "text-text-main"
-            )}>
+            <span 
+              className={cn(
+                "cursor-pointer text-sm font-black tracking-tight hover:underline",
+                isMe ? "text-accent-primary" : "text-text-main"
+              )}
+              style={roleColor ? { color: roleColor } : undefined}
+            >
               {sender?.name || event.getSender()}
             </span>
             <span className="text-[10px] font-mono text-text-muted uppercase tracking-tighter" title={fullDate}>

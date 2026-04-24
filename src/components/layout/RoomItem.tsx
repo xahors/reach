@@ -17,7 +17,7 @@ interface RoomItemProps {
 
 const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, otherUserId }) => {
   const client = useMatrixClient();
-  const { isCallActive } = useGroupCall(room.roomId);
+  const { isCallActive, participantCount } = useGroupCall(room.roomId);
   const roomNotificationSettings = useAppStore(state => state.roomNotificationSettings);
   const { presence, avatarUrl } = useUserPresence(isDM ? otherUserId || null : null);
   
@@ -82,7 +82,8 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, othe
         "group flex w-full items-center justify-between rounded px-2 py-1.5 transition relative",
         isActive
           ? "bg-bg-hover text-white ring-1 ring-white/10 shadow-lg shadow-black/20"
-          : (unreadCount > 0 ? "text-text-main font-bold" : "text-text-muted hover:bg-bg-hover hover:text-text-main")
+          : (unreadCount > 0 ? "text-text-main font-bold" : "text-text-muted hover:bg-bg-hover hover:text-text-main"),
+        isCallActive && !isActive && "text-accent-primary"
       )}
     >
       <div className="flex items-center overflow-hidden flex-1">
@@ -111,13 +112,22 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, othe
         )}
         <span className={cn(
           "truncate text-sm tracking-tight mr-1",
-          isActive || unreadCount > 0 ? "font-bold" : "font-medium"
+          isActive || unreadCount > 0 || isCallActive ? "font-bold" : "font-medium"
         )}>{room.name}</span>
         {roomSetting === 'mute' && <BellOff className="h-2.5 w-2.5 text-text-muted/50 shrink-0" />}
         {roomSetting === 'mentions' && <AtSign className="h-2.5 w-2.5 text-accent-primary/50 shrink-0" />}
       </div>
       
-      <div className="flex items-center space-x-1 ml-2">
+      <div className="flex items-center space-x-1.5 ml-2">
+        {isCallActive && (
+          <div className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-accent-primary/10 text-accent-primary animate-in fade-in zoom-in duration-300">
+            <Video className="h-3 w-3 animate-pulse" />
+            {participantCount > 0 && (
+              <span className="text-[10px] font-black">{participantCount}</span>
+            )}
+          </div>
+        )}
+
         {highlightCount > 0 ? (
           <div className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white shadow-lg shadow-red-500/20 animate-in zoom-in duration-300">
             {highlightCount > 99 ? '99+' : highlightCount}
@@ -125,12 +135,6 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, othe
         ) : unreadCount > 0 && !isActive ? (
           <div className="h-2 w-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)] animate-in zoom-in duration-300" />
         ) : null}
-
-        {isCallActive && (
-          <div className="flex h-4 w-4 items-center justify-center rounded-full bg-accent-primary/20 text-accent-primary animate-pulse">
-            <Video className="h-3 w-3" />
-          </div>
-        )}
       </div>
     </button>
   );

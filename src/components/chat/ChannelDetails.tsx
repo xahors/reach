@@ -6,6 +6,7 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { Users, Gamepad2, X, Trash2, Info, Bell, BellOff, AtSign, Check } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { type RoomMember } from 'matrix-js-sdk';
+import { getRoleColor } from '../../utils/roleColors';
 
 const ChannelDetails: React.FC = () => {
   const { 
@@ -84,10 +85,13 @@ const ChannelDetails: React.FC = () => {
                   />
                 </div>
                 <div className="ml-2 overflow-hidden flex flex-col">
-                  <div className={cn(
-                    "truncate text-xs font-bold leading-tight tracking-tight",
-                    member.powerLevel >= 50 ? "text-accent-primary" : "text-text-main group-hover:text-white"
-                  )}>
+                  <div 
+                    className={cn(
+                      "truncate text-xs font-bold leading-tight tracking-tight",
+                      !getRoleColor(member.powerLevel) && (member.powerLevel >= 50 ? "text-accent-primary" : "text-text-main group-hover:text-white")
+                    )}
+                    style={getRoleColor(member.powerLevel) ? { color: getRoleColor(member.powerLevel) } : undefined}
+                  >
                     {member.name}
                   </div>
                   {statusMsg && (
