@@ -147,7 +147,7 @@ interface AppState {
   incomingCall: MatrixCall | null;
   isSettingsOpen: boolean;
   isExploreOpen: boolean;
-  activeSettingsTab: 'account' | 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support';
+  activeSettingsTab: 'account' | 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support' | 'data';
   isChannelDetailsOpen: boolean;
   channelDetailsTab: 'members' | 'settings';
   isThreadOpen: boolean;

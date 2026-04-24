@@ -50,7 +50,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const { pinEvent, unpinEvent, isEventPinned, loading: pinLoading } = usePinnedEvents(event.getRoomId() || null);
   
   // Decryption state tracking
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   const forceUpdate = useCallback(() => setTick(t => t + 1), []);
 
   // Group reactions: Map of emoji key -> metadata
@@ -80,6 +80,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
   // Wrapped in try-catch to prevent crash if SDK event methods fail
   const eventData = useMemo(() => {
+    // Access tick to ensure useMemo re-calculates when forceUpdate is called
+    // (needed because MatrixEvent objects are mutated internally by the SDK)
+    void tick;
     try {
       return {
         sender: event.sender,
@@ -98,7 +101,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       console.error("Failed to parse event data:", err);
       return null;
     }
-  }, [event, userId]);
+  }, [event, userId, tick]);
 
   const updateReactions = useCallback(() => {
     if (!client || !eventData?.id || !eventData?.roomId) return;
@@ -229,8 +232,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
           updateReactions();
         } else if (relation.rel_type === RelationType.Thread) {
           updateThreadInfo();
+        } else if (relation.rel_type === RelationType.Replace) {
+          forceUpdate();
         }
       }
+    };
+
+    const onReplaced = () => {
+      forceUpdate();
     };
 
     const onReceipt = () => {
@@ -242,6 +251,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         if (redactedId === eventId) {
             updateReactions();
             updateThreadInfo();
+            forceUpdate();
         }
     };
 
@@ -262,6 +272,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
     room?.on(ThreadEvent.Update, onThreadUpdate);
     room?.on(ThreadEvent.NewReply, onThreadUpdate);
     event.on(MatrixEventEvent.Decrypted, onDecrypted);
+    event.on(MatrixEventEvent.Replaced, onReplaced);
 
     return () => {
       window.clearTimeout(timer);
@@ -271,6 +282,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       room?.removeListener(ThreadEvent.Update, onThreadUpdate);
       room?.removeListener(ThreadEvent.NewReply, onThreadUpdate);
       event.removeListener(MatrixEventEvent.Decrypted, onDecrypted);
+      event.removeListener(MatrixEventEvent.Replaced, onReplaced);
     };
   }, [client, event, eventData, updateReactions, updateThreadInfo, updateReadReceipts, isThreadRoot, isThread, forceUpdate, userId]);
 

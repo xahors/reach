@@ -7,7 +7,7 @@ import {
   X, Shield, Lock, LogOut, Bell, Monitor, 
   CheckCircle2, Gamepad2, Edit2, Palette, Code,
   Volume2, AtSign, LifeBuoy, FileText, GitBranch, AlertCircle,
-  User, Camera, Loader2, Key
+  User, Camera, Loader2, Key, Download, Upload
 } from 'lucide-react';
 import type { IMyDevice } from 'matrix-js-sdk';
 import { useGamePresence } from '../../hooks/useGamePresence';
@@ -32,7 +32,9 @@ const SettingsModal: React.FC = () => {
     userPresence,
     setUserPresence,
     globalNotificationSettings,
-    setGlobalNotificationSettings
+    setGlobalNotificationSettings,
+    roomSections,
+    roomSectionOrder
   } = useAppStore();
   
   const client = useMatrixClient();
@@ -42,6 +44,7 @@ const SettingsModal: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [editingGame, setEditingGame] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [importStatus, setImportStatus] = useState<{ message: string; isError: boolean } | null>(null);
   
   // Account state
   const [newDisplayName, setNewDisplayName] = useState('');
@@ -70,7 +73,7 @@ const SettingsModal: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeTab = activeSettingsTab as string;
-  const setActiveTab = (tab: 'account' | 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support') => setSettingsOpen(true, tab);
+  const setActiveTab = (tab: 'account' | 'security' | 'channels' | 'notifications' | 'sessions' | 'activity' | 'appearance' | 'support' | 'data') => setSettingsOpen(true, tab);
 
   useEffect(() => {
     if (isSettingsOpen && activeTab === 'account' && client) {
@@ -383,6 +386,62 @@ const SettingsModal: React.FC = () => {
     }
   };
 
+  const handleExportSections = () => {
+    const data = {
+      version: 1,
+      timestamp: Date.now(),
+      roomSections,
+      roomSectionOrder
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reach-sections-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    reachLogger.info("Exported room sections configuration");
+  };
+
+  const handleImportSections = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const data = JSON.parse(content);
+        
+        if (!data.roomSections || !data.roomSectionOrder) {
+          throw new Error('Invalid configuration file: Missing required fields.');
+        }
+
+        // Apply to store
+        useAppStore.setState({
+          roomSections: data.roomSections,
+          roomSectionOrder: data.roomSectionOrder
+        });
+
+        setImportStatus({ message: 'Configuration imported successfully! Your sidebar has been updated.', isError: false });
+        reachLogger.info("Imported room sections configuration");
+        
+        // Reset file input
+        e.target.value = '';
+        
+        setTimeout(() => setImportStatus(null), 5000);
+      } catch (err: unknown) {
+        const error = err as Error;
+        setImportStatus({ message: `Import failed: ${error.message}`, isError: true });
+        reachLogger.error("Failed to import sections:", err);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div id="settings-modal-overlay" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
       <div data-protected="true" className="flex h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-border-main bg-bg-main shadow-2xl animate-in zoom-in-95 duration-300">
@@ -415,12 +474,13 @@ const SettingsModal: React.FC = () => {
             <nav className="space-y-1">
               {[
                 { id: 'appearance', label: 'Appearance', icon: Palette },
+                { id: 'data', label: 'Data Portability', icon: Download },
                 { id: 'support', label: 'Support & Logs', icon: LifeBuoy },
               ].map(item => (
                 <button
                   key={item.id}
                   data-protected={item.id === 'appearance' ? 'true' : undefined}
-                  onClick={() => setActiveTab(item.id as 'appearance' | 'support')}
+                  onClick={() => setActiveTab(item.id as 'appearance' | 'support' | 'data')}
                   className={`flex w-full items-center rounded-md px-3 py-2 transition-all ${activeTab === item.id ? 'bg-bg-hover text-text-main ring-1 ring-white/10' : 'text-text-muted hover:bg-bg-hover/30 hover:text-text-main'}`}
                 >
                   <item.icon className={`mr-2 h-4 w-4 shrink-0 ${activeTab === item.id ? 'text-accent-primary' : ''}`} />
@@ -1073,6 +1133,71 @@ const SettingsModal: React.FC = () => {
                       className="h-32 w-full rounded-lg bg-bg-sidebar p-4 font-mono text-xs text-text-main outline-none ring-1 ring-border-main focus:ring-accent-primary transition-all"
                     />
                     <p className="mt-2 text-[10px] text-text-muted italic">Warning: Custom CSS can break the application layout. Use with caution.</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'data' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <h1 className="mb-8 text-2xl font-bold text-text-main tracking-tight underline decoration-accent-primary decoration-4 underline-offset-8">Data Portability</h1>
+              
+              <div className="space-y-8">
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Room Configuration Backup</h2>
+                  <div className="rounded-xl bg-bg-nav p-6 border border-border-main/50">
+                    <p className="mb-6 text-sm text-text-muted">Back up or restore your custom room categories and sidebar organization. This data is local to your browser and not stored on the Matrix homeserver.</p>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        onClick={handleExportSections}
+                        className="flex items-center justify-center rounded-lg bg-bg-sidebar border border-border-main py-4 text-xs font-black text-white transition hover:bg-bg-hover uppercase tracking-widest"
+                      >
+                        <Download className="mr-2 h-5 w-5 text-accent-primary" />
+                        Export Sections (.json)
+                      </button>
+                      
+                      <div className="relative">
+                        <button
+                          onClick={() => document.getElementById('import-sections-input')?.click()}
+                          className="w-full flex items-center justify-center rounded-lg bg-bg-sidebar border border-border-main py-4 text-xs font-black text-white transition hover:bg-bg-hover uppercase tracking-widest"
+                        >
+                          <Upload className="mr-2 h-5 w-5 text-accent-primary" />
+                          Import Sections (.json)
+                        </button>
+                        <input 
+                          id="import-sections-input"
+                          type="file" 
+                          accept=".json"
+                          className="hidden" 
+                          onChange={handleImportSections}
+                        />
+                      </div>
+                    </div>
+
+                    {importStatus && (
+                      <div className={cn(
+                        "mt-6 rounded-xl p-4 text-xs font-medium border animate-in fade-in duration-300 shadow-lg",
+                        importStatus.isError ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-green-500/10 text-green-400 border-green-500/20"
+                      )}>
+                        <div className="flex items-center space-x-3">
+                          {importStatus.isError ? <AlertCircle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
+                          <span className="text-sm font-bold">{importStatus.message}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+                
+                <section>
+                  <h2 className="mb-4 text-xs font-black uppercase text-text-muted tracking-widest">Usage Information</h2>
+                  <div className="rounded-xl bg-accent-primary/5 p-6 border border-accent-primary/20">
+                    <ul className="list-disc list-inside space-y-2 text-xs text-text-muted leading-relaxed">
+                      <li>Exporting creates a JSON file containing all your room assignments and category names.</li>
+                      <li>Importing will <span className="text-accent-primary font-bold">overwrite</span> your current sidebar organization.</li>
+                      <li>This backup does <span className="text-white font-bold">not</span> include your message history or encryption keys. Use the "Security" tab for E2EE backups.</li>
+                    </ul>
                   </div>
                 </section>
               </div>

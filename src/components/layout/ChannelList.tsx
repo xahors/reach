@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 import { useGamePresence } from '../../hooks/useGamePresence';
+import { useUserPresence } from '../../hooks/useUserPresence';
 import RoomItem from './RoomItem';
 
 const ChannelList: React.FC = () => {
@@ -51,6 +52,7 @@ const ChannelList: React.FC = () => {
   const [dragOverSection, setDragOverSection] = React.useState<string | null>(null);
   
   useGamePresence();
+  const { avatarUrl: userAvatarUrl, displayName: userDisplayName } = useUserPresence(client?.getUserId() || null);
 
   const activeSpace = activeSpaceId ? client?.getRoom(activeSpaceId) : null;
   const currentSpaceSections = (activeSpaceId && roomSectionOrder[activeSpaceId]) || ['Channels'];
@@ -395,13 +397,21 @@ const ChannelList: React.FC = () => {
         onClick={() => setShowStatusPicker(!showStatusPicker)}
         className="flex flex-1 items-center rounded px-1 transition hover:bg-bg-hover cursor-pointer group"
       >
-        <div className="relative h-8 w-8 rounded-full bg-accent-primary flex items-center justify-center text-bg-main font-bold text-sm">
-           {client?.getUserId()?.charAt(1).toUpperCase()}
+        <div className="relative h-8 w-8 rounded-full bg-accent-primary flex items-center justify-center text-bg-main font-bold text-sm overflow-hidden">
+           {userAvatarUrl ? (
+             <img 
+               src={client?.mxcUrlToHttp(userAvatarUrl, 32, 32, 'crop') || ''} 
+               alt="" 
+               className="h-full w-full object-cover" 
+             />
+           ) : (
+             <span>{userDisplayName?.charAt(0).toUpperCase() || client?.getUserId()?.charAt(1).toUpperCase()}</span>
+           )}
            <div className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-bg-sidebar ${getStatusColor(userPresence)}`} />
         </div>
         <div className="ml-2 flex flex-col overflow-hidden">
           <span className="text-sm font-bold text-text-main leading-tight truncate">
-            {client?.getUserId()?.split(':')[0].substring(1)}
+            {userDisplayName || client?.getUserId()?.split(':')[0].substring(1)}
           </span>
           <span className={cn(
             "truncate text-[10px] leading-tight flex items-center",

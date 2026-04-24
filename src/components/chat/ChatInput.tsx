@@ -12,6 +12,8 @@ import StickerPicker from './StickerPicker';
 import type { Sticker } from '../../hooks/useStickerPacks';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { markdownToHtml } from '../../utils/markdown';
+import { cn } from '../../utils/cn';
+import { COMMON_EMOJIS, type EmojiEntry } from '../../utils/emojis';
 
 interface ChatInputProps {
   roomId: string;
@@ -43,6 +45,12 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [showFormatting, setShowFormatting] = useState(false);
+  
+  // Autocomplete state
+  const [emojiSuggestions, setEmojiSuggestions] = useState<EmojiEntry[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [suggestionRange, setSuggestionRange] = useState<{ start: number, end: number } | null>(null);
+
   const client = useMatrixClient();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,23 +105,98 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
     }
   }, [message]);
 
-  const insertFormatting = (prefix: string, suffix: string = prefix) => {
+  // Emoji autocomplete logic
+  useEffect(() => {
+    if (!inputRef.current || document.activeElement !== inputRef.current) {
+      setEmojiSuggestions([]);
+      return;
+    }
+
+    const cursorPos = inputRef.current.selectionStart;
+    const textBeforeCursor = message.substring(0, cursorPos);
+    const words = textBeforeCursor.split(/\s/);
+    const lastWord = words[words.length - 1];
+
+    // Auto-replace :emoji: if it matches exactly
+    if (lastWord.startsWith(':') && lastWord.endsWith(':') && lastWord.length >= 3) {
+      const emojiName = lastWord.substring(1, lastWord.length - 1).toLowerCase();
+      const match = COMMON_EMOJIS.find(e => e.name.toLowerCase() === emojiName);
+      if (match) {
+        const before = textBeforeCursor.substring(0, textBeforeCursor.length - lastWord.length);
+        const after = message.substring(cursorPos);
+        setMessage(before + match.emoji + after);
+        
+        const newPos = before.length + match.emoji.length;
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.setSelectionRange(newPos, newPos);
+          }
+        }, 0);
+        return;
+      }
+    }
+
+    if (lastWord.startsWith(':') && lastWord.length >= 2) {
+      const query = lastWord.substring(1).toLowerCase();
+      const filtered = COMMON_EMOJIS.filter(e => e.name.toLowerCase().startsWith(query)).slice(0, 10);
+      
+      if (filtered.length > 0) {
+        setEmojiSuggestions(filtered);
+        setSelectedSuggestionIndex(0);
+        setSuggestionRange({
+          start: cursorPos - lastWord.length,
+          end: cursorPos
+        });
+        return;
+      }
+    }
+
+    setEmojiSuggestions([]);
+    setSuggestionRange(null);
+  }, [message]);
+
+  const insertFormatting = (prefix: string, suffix: string | null = null) => {
     if (!inputRef.current) return;
     
+    const actualSuffix = suffix === null ? prefix : suffix;
     const start = inputRef.current.selectionStart || 0;
     const end = inputRef.current.selectionEnd || 0;
     const selectedText = message.substring(start, end);
     const before = message.substring(0, start);
     const after = message.substring(end);
     
-    const newText = `${before}${prefix}${selectedText}${suffix}${after}`;
+    const newText = `${before}${prefix}${selectedText}${actualSuffix}${after}`;
     setMessage(newText);
     
     // Set focus back and adjust selection
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus();
-        const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
+        // If text was selected, put cursor after the suffix.
+        // If no text was selected, put cursor BETWEEN prefix and suffix (e.g. inside the backticks)
+        const newCursorPos = selectedText.length > 0 
+          ? start + prefix.length + selectedText.length + actualSuffix.length
+          : start + prefix.length;
+          
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
+  const insertEmojiSuggestion = (suggestion: EmojiEntry) => {
+    if (!suggestionRange) return;
+    
+    const before = message.substring(0, suggestionRange.start);
+    const after = message.substring(suggestionRange.end);
+    const newText = `${before}${suggestion.emoji} ${after}`;
+    
+    setMessage(newText);
+    setEmojiSuggestions([]);
+    
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        const newCursorPos = suggestionRange.start + suggestion.emoji.length + 1;
         inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
       }
     }, 0);
@@ -125,6 +208,74 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
 
     // Stop typing indicator immediately
     sendTypingStatus(false);
+
+    // Handle Slash Commands
+    if (message.startsWith('/') && !editingEvent) {
+      const parts = message.split(' ');
+      const command = parts[0].toLowerCase();
+      const args = parts.slice(1).join(' ');
+
+      switch (command) {
+        case '/me':
+          if (args) {
+            client.sendMessage(roomId, threadId, {
+              msgtype: MsgType.Emote,
+              body: args
+            });
+            setMessage('');
+            return;
+          }
+          break;
+        case '/nick':
+          if (args) {
+            client.setDisplayName(args).catch(e => console.error("Failed to set nick:", e));
+            setMessage('');
+            return;
+          }
+          break;
+        case '/shrug': {
+          const text = args ? args + ' ' : '';
+          // To get ¯\_(ツ)_/¯ in Reach's ReactMarkdown, we need ¯\\\_(ツ)\_/¯
+          // In JS string that is 6 backslashes for the first arm.
+          const reachShrug = '¯\\\\\\_(ツ)\\_/¯';
+          const fullMessage = text + reachShrug;
+          client.sendMessage(roomId, threadId, {
+            msgtype: MsgType.Text,
+            body: fullMessage,
+            format: "org.matrix.custom.html",
+            formatted_body: fullMessage
+          });
+          setMessage('');
+          return;
+        }
+        case '/tableflip': {
+          const body = (args ? args + ' ' : '') + '(╯°□°）╯︵ ┻━┻';
+          client.sendMessage(roomId, threadId, {
+            msgtype: MsgType.Text,
+            body: body,
+            format: "org.matrix.custom.html",
+            formatted_body: body
+          });
+          setMessage('');
+          return;
+        }
+        case '/unflip': {
+          const body = (args ? args + ' ' : '') + '┬─┬ノ( º _ ºノ)';
+          client.sendMessage(roomId, threadId, {
+            msgtype: MsgType.Text,
+            body: body,
+            format: "org.matrix.custom.html",
+            formatted_body: body
+          });
+          setMessage('');
+          return;
+        }
+        case '/clear':
+          // Local clear (placeholder for actual functionality if needed)
+          setMessage('');
+          return;
+      }
+    }
 
     const formattedBody = markdownToHtml(message);
     const hasFormatting = formattedBody !== message;
@@ -194,6 +345,67 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (emojiSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSuggestionIndex(prev => (prev + 1) % emojiSuggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSuggestionIndex(prev => (prev - 1 + emojiSuggestions.length) % emojiSuggestions.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = emojiSuggestions[selectedSuggestionIndex];
+        insertEmojiSuggestion(selected);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setEmojiSuggestions([]);
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && e.shiftKey) {
+      if (!inputRef.current) return;
+      const start = inputRef.current.selectionStart;
+      const textBefore = message.substring(0, start);
+      const lines = textBefore.split('\n');
+      const currentLine = lines[lines.length - 1];
+
+      // Match unordered list (- or *) or ordered list (1.)
+      const unorderedMatch = currentLine.match(/^(\s*[-*]\s+)/);
+      const orderedMatch = currentLine.match(/^(\s*)(\d+)\.\s+/);
+
+      if (unorderedMatch || orderedMatch) {
+        e.preventDefault();
+        let prefix = '';
+        if (unorderedMatch) {
+          prefix = unorderedMatch[1];
+        } else if (orderedMatch) {
+          const indentation = orderedMatch[1];
+          const currentNumber = parseInt(orderedMatch[2], 10);
+          prefix = `${indentation}${currentNumber + 1}. `;
+        }
+
+        const before = message.substring(0, start);
+        const after = message.substring(start);
+        setMessage(before + '\n' + prefix + after);
+        
+        const newPos = start + 1 + prefix.length;
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(newPos, newPos);
+          }
+        }, 0);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -290,19 +502,47 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
         </div>
       )}
 
-      <div className={`flex flex-col rounded-lg bg-bg-nav border border-border-main transition-all ${editingEvent ? 'rounded-t-none border-accent-primary/30 shadow-[0_0_15px_rgba(255,255,255,0.05)]' : replyingToEvent ? 'rounded-t-none' : 'focus-within:border-accent-primary/50 shadow-sm'}`}>
+      <div className={`flex flex-col rounded-lg bg-bg-nav border border-border-main transition-all relative ${editingEvent ? 'rounded-t-none border-accent-primary/30 shadow-[0_0_15px_rgba(255,255,255,0.05)]' : replyingToEvent ? 'rounded-t-none' : 'focus-within:border-accent-primary/50 shadow-sm'}`}>
+        {/* Emoji Autocomplete Suggestions */}
+        {emojiSuggestions.length > 0 && (
+          <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl bg-bg-sidebar border border-border-main shadow-2xl overflow-hidden z-[100] animate-in slide-in-from-bottom-2 duration-200">
+            <div className="px-3 py-2 border-b border-border-main bg-bg-nav/50">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted italic">Emoji Matching ":{message.substring(suggestionRange?.start || 0, suggestionRange?.end || 0).substring(1)}"</span>
+            </div>
+            <div className="max-h-64 overflow-y-auto no-scrollbar">
+              {emojiSuggestions.map((suggestion, index) => (
+                <div 
+                  key={suggestion.name}
+                  onClick={() => insertEmojiSuggestion(suggestion)}
+                  onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                  className={cn(
+                    "flex items-center space-x-3 px-3 py-2 cursor-pointer transition-colors",
+                    index === selectedSuggestionIndex ? "bg-accent-primary text-bg-main" : "hover:bg-bg-hover text-text-main"
+                  )}
+                >
+                  <span className="text-xl">{suggestion.emoji}</span>
+                  <span className={cn(
+                    "text-xs font-bold",
+                    index === selectedSuggestionIndex ? "text-bg-main" : "text-text-muted"
+                  )}>:{suggestion.name}:</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Formatting Ribbon */}
         {showFormatting && (
           <div className="flex items-center space-x-1 border-b border-border-main/30 px-2 py-1.5 animate-in slide-in-from-top-2 duration-200 overflow-x-auto no-scrollbar">
             <button type="button" onClick={() => insertFormatting('**')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Bold"><Bold className="h-3.5 w-3.5" /></button>
             <button type="button" onClick={() => insertFormatting('*')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Italic"><Italic className="h-3.5 w-3.5" /></button>
             <button type="button" onClick={() => insertFormatting('`')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Code"><Code className="h-3.5 w-3.5" /></button>
-            <button type="button" onClick={() => insertFormatting('[text](url)')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Link"><LinkIcon className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={() => insertFormatting('[', '](url)')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Link"><LinkIcon className="h-3.5 w-3.5" /></button>
             <div className="w-px h-4 bg-border-main mx-1" />
-            <button type="button" onClick={() => insertFormatting('- ')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="List"><List className="h-3.5 w-3.5" /></button>
-            <button type="button" onClick={() => insertFormatting('1. ')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Ordered List"><ListOrdered className="h-3.5 w-3.5" /></button>
-            <button type="button" onClick={() => insertFormatting('> ')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Quote"><Quote className="h-3.5 w-3.5" /></button>
-            <button type="button" onClick={() => insertFormatting('### ')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Heading"><Type className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={() => insertFormatting('- ', '')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="List"><List className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={() => insertFormatting('1. ', '')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Ordered List"><ListOrdered className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={() => insertFormatting('> ', '')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Quote"><Quote className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={() => insertFormatting('### ', '')} className="p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-primary rounded transition" title="Heading"><Type className="h-3.5 w-3.5" /></button>
           </div>
         )}
 
