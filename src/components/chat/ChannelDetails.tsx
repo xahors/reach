@@ -3,7 +3,11 @@ import { useAppStore } from '../../store/useAppStore';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useRoomMembers } from '../../hooks/useRoomMembers';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
-import { Users, Gamepad2, X, Trash2, Info, Bell, BellOff, AtSign, Check } from 'lucide-react';
+import { 
+  Users, Gamepad2, X, Trash2, Info, Bell, BellOff, 
+  AtSign, Check, ShieldAlert, ShieldCheck, 
+  UserCog, Save, Loader2 
+} from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { type RoomMember } from 'matrix-js-sdk';
 import { getRoleColor } from '../../utils/roleColors';
@@ -15,21 +19,38 @@ const ChannelDetails: React.FC = () => {
     channelDetailsTab, 
     setChannelDetailsTab,
     roomNotificationSettings,
-    setRoomNotificationSetting
+    setRoomNotificationSetting,
+    setUserContextMenu
   } = useAppStore();
   const { members, loading } = useRoomMembers(activeRoomId);
   const { redactAllMyMessages } = useRoomMessages(activeRoomId);
   const client = useMatrixClient();
   
+  // Room editing state
+  const [roomName, setRoomName] = React.useState('');
+  const [roomTopic, setRoomTopic] = React.useState('');
+  const [isSavingRoom, setIsSavingRoom] = React.useState(false);
+  const [roomSaveStatus, setRoomSaveStatus] = React.useState<{ message: string; isError: boolean } | null>(null);
+
   const activeTab = channelDetailsTab;
   const setActiveTab = setChannelDetailsTab;
 
   const room = activeRoomId ? client?.getRoom(activeRoomId) : null;
+  const myUserId = client?.getUserId();
+
+  // Initialize room info on tab switch
+  React.useEffect(() => {
+    if (activeTab === 'settings' && room) {
+      setRoomName(room.name || '');
+      setRoomTopic(room.currentState.getStateEvents('m.room.topic', '')?.getContent()?.topic || '');
+    }
+  }, [activeTab, room]);
 
   if (!room) return null;
 
   const onlineMembers = members.filter(m => m.user?.presence === 'online');
   const offlineMembers = members.filter(m => m.user?.presence !== 'online');
+  const myPowerLevel = room.getMember(myUserId || '')?.powerLevel || 0;
 
   const getAvatar = (member: RoomMember) => {
     try {
@@ -50,11 +71,45 @@ const ChannelDetails: React.FC = () => {
 
   const currentNotifSetting = roomNotificationSettings[room.roomId] || 'all';
 
+  const handleUpdateRoomDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !activeRoomId) return;
+
+    setIsSavingRoom(true);
+    setRoomSaveStatus(null);
+    try {
+      if (roomName !== room?.name) {
+        await client.setRoomName(activeRoomId, roomName);
+      }
+      const currentTopic = room?.currentState.getStateEvents('m.room.topic', '')?.getContent()?.topic;
+      if (roomTopic !== currentTopic) {
+        await client.setRoomTopic(activeRoomId, roomTopic);
+      }
+      setRoomSaveStatus({ message: 'Room details updated successfully!', isError: false });
+      setTimeout(() => setRoomSaveStatus(null), 3000);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setRoomSaveStatus({ message: `Error: ${error.message || 'Failed to update'}`, isError: true });
+    } finally {
+      setIsSavingRoom(false);
+    }
+  };
+
+  const handleMemberClick = (e: React.MouseEvent, member: RoomMember) => {
+    if (!activeRoomId) return;
+    setUserContextMenu({
+      userId: member.userId,
+      roomId: activeRoomId,
+      x: e.clientX,
+      y: e.clientY
+    });
+  };
+
   const renderMemberGroup = (title: string, groupMembers: typeof members) => {
     if (groupMembers.length === 0) return null;
 
     return (
-      <div className="mt-4 first:mt-0">
+      <div className="mt-4 first:mt-0 relative">
         <h5 className="mb-1 text-[10px] font-black uppercase text-text-muted px-2 tracking-widest">
           {title} — {groupMembers.length}
         </h5>
@@ -67,7 +122,10 @@ const ChannelDetails: React.FC = () => {
             return (
               <div
                 key={member.userId}
-                className="group flex items-center rounded px-2 py-1 transition hover:bg-bg-hover cursor-pointer"
+                onClick={(e) => handleMemberClick(e, member)}
+                className={cn(
+                  "group flex items-center rounded px-2 py-1 transition hover:bg-bg-hover cursor-pointer"
+                )}
               >
                 <div className="relative">
                   <div className="h-8 w-8 rounded-full bg-bg-nav flex items-center justify-center text-text-muted font-black text-[10px] overflow-hidden shrink-0 border border-border-main">
@@ -84,15 +142,22 @@ const ChannelDetails: React.FC = () => {
                     )} 
                   />
                 </div>
-                <div className="ml-2 overflow-hidden flex flex-col">
-                  <div 
-                    className={cn(
-                      "truncate text-xs font-bold leading-tight tracking-tight",
-                      !getRoleColor(member.powerLevel) && (member.powerLevel >= 50 ? "text-accent-primary" : "text-text-main group-hover:text-white")
-                    )}
-                    style={getRoleColor(member.powerLevel) ? { color: getRoleColor(member.powerLevel) } : undefined}
-                  >
-                    {member.name}
+                <div className="ml-2 overflow-hidden flex flex-1 flex-col">
+                  <div className="flex items-center space-x-1">
+                    <div 
+                      className={cn(
+                        "truncate text-xs font-bold leading-tight tracking-tight",
+                        !getRoleColor(member.powerLevel) && (member.powerLevel >= 100 ? "text-red-400" : member.powerLevel >= 50 ? "text-accent-primary" : "text-text-main group-hover:text-white")
+                      )}
+                      style={getRoleColor(member.powerLevel) ? { color: getRoleColor(member.powerLevel) } : undefined}
+                    >
+                      {member.name}
+                    </div>
+                    {member.powerLevel >= 100 ? (
+                      <span title="Admin"><ShieldAlert className="h-2.5 w-2.5 text-red-400 shrink-0" /></span>
+                    ) : member.powerLevel >= 50 ? (
+                      <span title="Moderator"><ShieldCheck className="h-2.5 w-2.5 text-accent-primary shrink-0" /></span>
+                    ) : null}
                   </div>
                   {statusMsg && (
                     <div className={cn(
@@ -104,6 +169,7 @@ const ChannelDetails: React.FC = () => {
                     </div>
                   )}
                 </div>
+                <UserCog className="h-3.5 w-3.5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity ml-2" />
               </div>
             );
           })}
@@ -200,16 +266,67 @@ const ChannelDetails: React.FC = () => {
 
             <section>
               <h4 className="mb-3 text-[10px] font-black uppercase text-text-muted tracking-widest px-1">Room Info</h4>
-              <div className="rounded-xl border border-border-main bg-bg-nav/50 p-4 space-y-3 shadow-sm">
-                <div>
-                  <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Room ID</label>
-                  <code className="text-[10px] text-accent-primary bg-bg-main p-1.5 rounded break-all block font-mono border border-border-main leading-relaxed">
-                    {room.roomId}
-                  </code>
-                </div>
-                <div>
-                  <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Creator</label>
-                  <p className="text-xs text-text-main font-medium">{room.getMember(room.getCreator() || '')?.name || room.getCreator()}</p>
+              <div className="rounded-xl border border-border-main bg-bg-nav/50 p-4 space-y-4 shadow-sm">
+                <form onSubmit={handleUpdateRoomDetails} className="space-y-4">
+                  <div>
+                    <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Room Name</label>
+                    <input 
+                      type="text"
+                      value={roomName}
+                      onChange={(e) => setRoomName(e.target.value)}
+                      disabled={myPowerLevel < 50}
+                      className={cn(
+                        "w-full rounded bg-bg-main p-2 text-xs text-text-main outline-none border transition-all",
+                        myPowerLevel >= 50 ? "border-border-main focus:border-accent-primary" : "border-transparent cursor-not-allowed opacity-80"
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Room Topic</label>
+                    <textarea 
+                      value={roomTopic}
+                      onChange={(e) => setRoomTopic(e.target.value)}
+                      disabled={myPowerLevel < 50}
+                      rows={3}
+                      className={cn(
+                        "w-full rounded bg-bg-main p-2 text-xs text-text-main outline-none border transition-all resize-none",
+                        myPowerLevel >= 50 ? "border-border-main focus:border-accent-primary" : "border-transparent cursor-not-allowed opacity-80"
+                      )}
+                    />
+                  </div>
+                  
+                  {myPowerLevel >= 50 && (
+                    <button
+                      type="submit"
+                      disabled={isSavingRoom || (roomName === room?.name && roomTopic === (room?.currentState.getStateEvents('m.room.topic', '')?.getContent()?.topic || ''))}
+                      className="flex w-full items-center justify-center space-x-2 rounded-lg bg-accent-primary p-2.5 text-[10px] font-black uppercase tracking-widest text-bg-main transition hover:opacity-90 disabled:opacity-50 shadow-lg shadow-accent-primary/20"
+                    >
+                      {isSavingRoom ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      <span>Save Changes</span>
+                    </button>
+                  )}
+                </form>
+
+                {roomSaveStatus && (
+                  <div className={cn(
+                    "rounded-lg p-2 text-[10px] font-bold border animate-in fade-in duration-300",
+                    roomSaveStatus.isError ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-green-500/10 text-green-400 border-green-500/20"
+                  )}>
+                    {roomSaveStatus.message}
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-border-main/30 space-y-2">
+                  <div>
+                    <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Room ID</label>
+                    <code className="text-[10px] text-accent-primary bg-bg-main p-1.5 rounded break-all block font-mono border border-border-main leading-relaxed">
+                      {room.roomId}
+                    </code>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Creator</label>
+                    <p className="text-xs text-text-main font-medium">{room.getMember(room.getCreator() || '')?.name || room.getCreator()}</p>
+                  </div>
                 </div>
               </div>
             </section>

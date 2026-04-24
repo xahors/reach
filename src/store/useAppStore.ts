@@ -186,6 +186,8 @@ interface AppState {
   };
   roomNotificationSettings: Record<string, 'all' | 'mentions' | 'mute'>;
   highlightedEventId: string | null;
+  userProfileId: string | null;
+  userContextMenu: { userId: string, roomId: string, x: number, y: number } | null;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
   setActiveSpaceId: (id: string | null) => void;
@@ -224,6 +226,8 @@ interface AppState {
   setGlobalNotificationSettings: (settings: Partial<AppState['globalNotificationSettings']>) => void;
   setRoomNotificationSetting: (roomId: string, setting: AppState['roomNotificationSettings'][string]) => void;
   setHighlightedEventId: (id: string | null) => void;
+  setUserProfileId: (id: string | null) => void;
+  setUserContextMenu: (menu: AppState['userContextMenu']) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -278,6 +282,8 @@ export const useAppStore = create<AppState>()(
       },
       roomNotificationSettings: {},
       highlightedEventId: null,
+      userProfileId: null,
+      userContextMenu: null,
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
@@ -384,6 +390,8 @@ export const useAppStore = create<AppState>()(
         roomNotificationSettings: { ...state.roomNotificationSettings, [roomId]: setting }
       })),
       setHighlightedEventId: (id) => set({ highlightedEventId: id }),
+      setUserProfileId: (id) => set({ userProfileId: id }),
+      setUserContextMenu: (menu) => set({ userContextMenu: menu }),
     }),
     {
       name: 'reach-app-storage',

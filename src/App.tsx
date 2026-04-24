@@ -14,6 +14,8 @@ import SettingsModal from './components/ui/SettingsModal';
 import ThemeManager from './components/ui/ThemeManager';
 import { ExploreModal } from './components/ui/ExploreModal';
 import MediaLightbox from './components/ui/MediaLightbox';
+import UserContextMenu from './components/ui/UserContextMenu';
+import UserProfileModal from './components/ui/UserProfileModal';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   constructor(props: { children: ReactNode }) {
@@ -97,6 +99,8 @@ function MainApp() {
       <SettingsModal />
       <ExploreModal />
       <MediaLightbox />
+      <UserContextMenu />
+      <UserProfileModal />
     </div>
   );
 }
