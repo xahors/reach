@@ -97,16 +97,19 @@ const ChannelList: React.FC = () => {
     lastSelectedSpace.current = activeSpaceId;
   }, [activeSpaceId, rooms, activeRoomId, setActiveRoomId]);
 
-  const handleRoomClick = async (roomId: string) => {
+  const handleRoomClick = (roomId: string) => {
     callManager.warmupAudioContext();
     setActiveRoomId?.(roomId);
     
     // Auto-join persistent voice channels if a call is already active
+    // Run this in the background to avoid blocking the UI thread
     const room = client?.getRoom(roomId);
     if (room) {
       const groupCall = client?.getGroupCallForRoom(roomId);
       if (groupCall) {
-        await callManager.joinVoiceChannel(roomId);
+        callManager.joinVoiceChannel(roomId).catch(err => {
+           console.error("Failed to auto-join voice channel:", err);
+        });
       }
     }
   };

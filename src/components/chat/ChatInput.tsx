@@ -236,14 +236,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
         case '/shrug': {
           const text = args ? args + ' ' : '';
           // To get ¯\_(ツ)_/¯ in Reach's ReactMarkdown, we need ¯\\\_(ツ)\_/¯
-          // In JS string that is 6 backslashes for the first arm.
           const reachShrug = '¯\\\\\\_(ツ)\\_/¯';
           const fullMessage = text + reachShrug;
           client.sendMessage(roomId, threadId, {
             msgtype: MsgType.Text,
             body: fullMessage,
             format: "org.matrix.custom.html",
-            formatted_body: fullMessage
+            formatted_body: markdownToHtml(fullMessage)
           });
           setMessage('');
           return;
@@ -254,7 +253,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
             msgtype: MsgType.Text,
             body: body,
             format: "org.matrix.custom.html",
-            formatted_body: body
+            formatted_body: markdownToHtml(body)
           });
           setMessage('');
           return;
@@ -265,7 +264,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ roomId, roomName, threadId = null
             msgtype: MsgType.Text,
             body: body,
             format: "org.matrix.custom.html",
-            formatted_body: body
+            formatted_body: markdownToHtml(body)
           });
           setMessage('');
           return;

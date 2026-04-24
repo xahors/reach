@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ClientEvent } from 'matrix-js-sdk';
+import { ClientEvent, type MatrixEvent, type User } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, type PresenceState } from '../store/useAppStore';
 import { matrixService } from '../core/matrix';
 
 export const useMatrixSync = () => {
   const client = useMatrixClient();
-  const { isLoggedIn, isSynced, setSynced } = useAppStore();
+  const { isLoggedIn, isSynced, setSynced, setGlobalUserPresence } = useAppStore();
   const [syncState, setSyncState] = useState<string | null>(() => {
     return (isLoggedIn && client) ? client.getSyncState() : null;
   });
@@ -44,7 +44,13 @@ export const useMatrixSync = () => {
       }
     };
 
+    const onPresence = (_event: MatrixEvent, user: User) => {
+      setGlobalUserPresence(user.userId, (user.presence || 'offline') as PresenceState);
+    };
+
     client.on(ClientEvent.Sync, onSync);
+    // @ts-expect-error - Newer SDK feature
+    client.on('presence', onPresence);
     
     // Check initial state - but only if it changed since component render
     const currentState = client.getSyncState();
@@ -54,9 +60,11 @@ export const useMatrixSync = () => {
 
     return () => {
       client.removeListener(ClientEvent.Sync, onSync);
+      // @ts-expect-error - Newer SDK feature
+      client.removeListener('presence', onPresence);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, isLoggedIn, setSynced]);
+  }, [client, isLoggedIn, setSynced, setGlobalUserPresence]);
 
   return { isSynced, syncState };
 };

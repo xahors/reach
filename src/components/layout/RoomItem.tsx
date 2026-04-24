@@ -15,7 +15,7 @@ interface RoomItemProps {
   otherUserId?: string;
 }
 
-const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, otherUserId }) => {
+const RoomItem: React.FC<RoomItemProps> = React.memo(({ room, isActive, onClick, isDM, otherUserId }) => {
   const client = useMatrixClient();
   const { isCallActive, participantCount } = useGroupCall(room.roomId);
   const roomNotificationSettings = useAppStore(state => state.roomNotificationSettings);
@@ -30,9 +30,12 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, othe
     if (!room) return;
     try {
       // @ts-expect-error: Matrix SDK type mismatch for notification count type
-      setUnreadCount(room.getUnreadNotificationCount('total'));
+      const unread = room.getUnreadNotificationCount('total');
       // @ts-expect-error: Matrix SDK type mismatch for notification count type
-      setHighlightCount(room.getUnreadNotificationCount('highlight'));
+      const highlight = room.getUnreadNotificationCount('highlight');
+      
+      setUnreadCount(prev => prev !== unread ? unread : prev);
+      setHighlightCount(prev => prev !== highlight ? highlight : prev);
     } catch (err) {
       console.warn("Failed to get notification counts for room:", room.roomId, err);
     }
@@ -42,20 +45,18 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, othe
     if (!client) return;
     
     // Initial load
-    const timeout = setTimeout(() => updateCounts(), 0);
+    updateCounts();
 
-    const onSync = () => updateCounts();
-    const onReceipt = () => updateCounts();
+    const onUpdate = () => updateCounts();
 
-    client.on(ClientEvent.Sync, onSync);
-    room.on(RoomEvent.Receipt, onReceipt);
-    room.on(RoomEvent.Timeline, onSync);
+    client.on(ClientEvent.Sync, onUpdate);
+    room.on(RoomEvent.Receipt, onUpdate);
+    room.on(RoomEvent.Timeline, onUpdate);
 
     return () => {
-      clearTimeout(timeout);
-      client.removeListener(ClientEvent.Sync, onSync);
-      room.removeListener(RoomEvent.Receipt, onReceipt);
-      room.removeListener(RoomEvent.Timeline, onSync);
+      client.removeListener(ClientEvent.Sync, onUpdate);
+      room.removeListener(RoomEvent.Receipt, onUpdate);
+      room.removeListener(RoomEvent.Timeline, onUpdate);
     };
   }, [client, room, updateCounts]);
 
@@ -138,6 +139,6 @@ const RoomItem: React.FC<RoomItemProps> = ({ room, isActive, onClick, isDM, othe
       </div>
     </button>
   );
-};
+});
 
 export default RoomItem;

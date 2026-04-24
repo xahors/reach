@@ -5,6 +5,8 @@ import { type GroupCall } from 'matrix-js-sdk/lib/webrtc/groupCall';
 import { type CallFeed } from 'matrix-js-sdk/lib/webrtc/callFeed';
 import { matrixService } from '../core/matrix';
 
+export type PresenceState = 'online' | 'offline' | 'unavailable' | 'unknown' | 'idle' | 'dnd' | 'invisible';
+
 export type ThemeColors = {
   'bg-main': string;
   'bg-sidebar': string;
@@ -166,6 +168,7 @@ interface AppState {
   customGameNames: Record<string, string>;
   detectedGame: string | null;
   userPresence: 'online' | 'idle' | 'dnd' | 'invisible';
+  userPresenceRecord: Record<string, 'online' | 'offline' | 'unavailable' | 'unknown' | 'idle' | 'dnd' | 'invisible'>;
   customStatus: string | null;
   roomSections: Record<string, string>; // roomId -> sectionName
   roomSectionOrder: Record<string, string[]>; // spaceId -> list of section names
@@ -215,6 +218,7 @@ interface AppState {
   setCustomGameNames: (names: Record<string, string>) => void;
   setDetectedGame: (game: string | null) => void;
   setUserPresence: (presence: 'online' | 'idle' | 'dnd' | 'invisible') => void;
+  setGlobalUserPresence: (userId: string, presence: AppState['userPresenceRecord'][string]) => void;
   setCustomStatus: (status: string | null) => void;
   setRoomSection: (roomId: string, sectionName: string) => void;
   addSection: (spaceId: string, sectionName: string) => void;
@@ -263,12 +267,13 @@ export const useAppStore = create<AppState>()(
       customGameNames: {},
       detectedGame: null,
       userPresence: 'online',
+      userPresenceRecord: {},
       customStatus: null,
       roomSections: {},
       roomSectionOrder: {},
       themeConfig: {
-        activePreset: 'oled',
-        colors: THEME_PRESETS.oled,
+        activePreset: 'classic',
+        colors: THEME_PRESETS.classic,
         customCSS: '',
       },
       showUrlPreviews: true,
@@ -351,6 +356,9 @@ export const useAppStore = create<AppState>()(
         set({ userPresence: presence });
         matrixService.syncPresenceWithStore();
       },
+      setGlobalUserPresence: (userId, presence) => set((state) => ({
+        userPresenceRecord: { ...state.userPresenceRecord, [userId]: presence }
+      })),
       setCustomStatus: (status) => {
         set({ customStatus: status });
         matrixService.syncPresenceWithStore();

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Room, ClientEvent, RoomEvent, RoomStateEvent } from 'matrix-js-sdk';
+import { Room, RoomEvent, RoomStateEvent } from 'matrix-js-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
 export const useSpaceRooms = (spaceId: string | null) => {
@@ -67,19 +67,11 @@ export const useSpaceRooms = (spaceId: string | null) => {
       updateRooms();
     }, 0);
 
-    const onSync = (state: string) => {
-      if (state === 'PREPARED' || state === 'SYNCING') {
-        updateRooms();
-      }
-    };
-
-    client.on(ClientEvent.Sync, onSync);
     client.on(RoomStateEvent.Events, updateRooms);
     client.on(RoomEvent.MyMembership, updateRooms);
 
     return () => {
       clearTimeout(initialLoadTimeout);
-      client.removeListener(ClientEvent.Sync, onSync);
       client.removeListener(RoomStateEvent.Events, updateRooms);
       client.removeListener(RoomEvent.MyMembership, updateRooms);
     };
