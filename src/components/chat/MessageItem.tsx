@@ -13,6 +13,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { getRoleColor } from '../../utils/roleColors';
+import DOMPurify from 'dompurify';
 
 interface MessageItemProps {
   event: MatrixEvent;
@@ -321,6 +322,7 @@ const MessageItem: React.FC<MessageItemProps> = React.memo(({
                : <code className="block bg-bg-sidebar p-2 rounded-lg border border-border-main my-2 overflow-x-auto" {...props} />
     };
     if (eventData?.content.format === 'org.matrix.custom.html' && eventData?.content.formatted_body) {
+      const sanitizedHtml = DOMPurify.sanitize(eventData.content.formatted_body);
       return (
         <div className="markdown-content text-sm leading-relaxed text-text-main break-words">
           <ReactMarkdown 
@@ -328,7 +330,7 @@ const MessageItem: React.FC<MessageItemProps> = React.memo(({
             rehypePlugins={[rehypeRaw]} 
             components={markdownComponents}
           >
-            {eventData.content.formatted_body}
+            {sanitizedHtml}
           </ReactMarkdown>
         </div>
       );

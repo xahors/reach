@@ -175,6 +175,7 @@ interface AppState {
   themeConfig: ThemeConfig;
   showUrlPreviews: boolean;
   sendReadReceipts: boolean;
+  persistSssKey: boolean;
   mediaPreview: {
     url: string;
     type: 'image' | 'video';
@@ -226,6 +227,7 @@ interface AppState {
   setThemeConfig: (config: Partial<ThemeConfig>) => void;
   setShowUrlPreviews: (show: boolean) => void;
   setSendReadReceipts: (send: boolean) => void;
+  setPersistSssKey: (persist: boolean) => void;
   setMediaPreview: (preview: AppState['mediaPreview']) => void;
   setGlobalNotificationSettings: (settings: Partial<AppState['globalNotificationSettings']>) => void;
   setRoomNotificationSetting: (roomId: string, setting: AppState['roomNotificationSettings'][string]) => void;
@@ -278,6 +280,7 @@ export const useAppStore = create<AppState>()(
       },
       showUrlPreviews: true,
       sendReadReceipts: true,
+      persistSssKey: false,
       mediaPreview: null,
       globalNotificationSettings: {
         enabled: true,
@@ -390,6 +393,7 @@ export const useAppStore = create<AppState>()(
       })),
       setShowUrlPreviews: (show) => set({ showUrlPreviews: show }),
       setSendReadReceipts: (send) => set({ sendReadReceipts: send }),
+      setPersistSssKey: (persist) => set({ persistSssKey: persist }),
       setMediaPreview: (preview) => set({ mediaPreview: preview }),
       setGlobalNotificationSettings: (settings) => set((state) => ({
         globalNotificationSettings: { ...state.globalNotificationSettings, ...settings }
@@ -417,6 +421,7 @@ export const useAppStore = create<AppState>()(
         themeConfig: state.themeConfig,
         showUrlPreviews: state.showUrlPreviews,
         sendReadReceipts: state.sendReadReceipts,
+        persistSssKey: state.persistSssKey,
         activeSpaceId: state.activeSpaceId,
         activeRoomId: state.activeRoomId,
         globalNotificationSettings: state.globalNotificationSettings,

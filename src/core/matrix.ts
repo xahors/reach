@@ -27,6 +27,10 @@ class MatrixService {
 
   private saveSecretStorageKey(keyId: string, key: Uint8Array) {
     this.cachedSecretStorageKey = { keyId, key };
+    
+    const { persistSssKey } = useAppStore.getState();
+    if (!persistSssKey) return;
+
     try {
       // Store in hex for persistence
       const hex = Array.from(key).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -55,8 +59,8 @@ class MatrixService {
   private async initWasm() {
     if (this.wasmInitialized) return;
     try {
-      console.log("Initializing Rust crypto WASM...");
-      await RustSdkCryptoJs.initAsync();
+      console.log("Initializing Rust crypto WASM from /matrix_sdk_crypto_wasm_bg.wasm...");
+      await RustSdkCryptoJs.initAsync("/matrix_sdk_crypto_wasm_bg.wasm");
       
       this.wasmInitialized = true;
       console.log("WASM components initialized.");
@@ -106,8 +110,6 @@ class MatrixService {
           }
           
           const rawInput = this.tempRecoveryKey.trim();
-          let fallbackKeyId: string | null = null;
-          let fallbackKey: Uint8Array | null = null;
           let lastError: Error | null = null;
           
           for (const [keyId, keyInfo] of Object.entries(keys)) {
@@ -135,11 +137,6 @@ class MatrixService {
             }
 
             if (derivedKey) {
-              if (!fallbackKeyId) {
-                fallbackKeyId = keyId;
-                fallbackKey = derivedKey;
-              }
-
               try {
                 // Use the SDK's built-in checkKey if available
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -175,16 +172,7 @@ class MatrixService {
             }
           }
 
-          // FINAL FALLBACK: If we successfully derived a key but no MAC checks passed,
-          // return the first derived key. The server's MAC might be wrong, but the key material could be correct.
-          if (fallbackKeyId && fallbackKey) {
-             console.warn(`All MAC checks failed for ${name}, returning fallback key ${fallbackKeyId}. This might cause decryption failures if the key is actually wrong.`);
-             this.saveSecretStorageKey(fallbackKeyId, fallbackKey);
-             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-             return [fallbackKeyId, fallbackKey as any];
-          }
-
-          // If we reach here, we couldn't even derive a key.
+          // If we reach here, we couldn't even derive a key or all MAC checks failed.
           console.error(`Failed to derive any valid secret storage key for ${name}. Last error:`, lastError?.message);
           
           // Throw a specific error so the UI can catch it and display a helpful message,
@@ -196,10 +184,6 @@ class MatrixService {
         }
       }
     });
-
-    // Expose for debugging
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).matrixClient = client;
 
     try {
       await store.startup();

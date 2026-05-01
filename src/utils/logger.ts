@@ -47,7 +47,11 @@ class Logger {
               try {
                 // Scrub sensitive Matrix fields
                 return JSON.stringify(arg, (key, value) => {
-                  if (['access_token', 'password', 'recovery_key', 'private_key', 'token'].includes(key.toLowerCase())) {
+                  const lowerKey = key.toLowerCase();
+                  if ([
+                    'access_token', 'password', 'recovery_key', 'private_key', 'token',
+                    'sid', 'session_id', 'sender_key', 'pk', 'sk', 'mac', 'iv', 'key'
+                  ].includes(lowerKey)) {
                     return '[REDACTED]';
                   }
                   return value;

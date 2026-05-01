@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 /**
  * Converts markdown text to Matrix-compatible HTML.
@@ -13,7 +14,8 @@ export const markdownToHtml = (markdown: string): string => {
     breaks: true,
   });
 
-  return html as string;
+  // Sanitize the resulting HTML
+  return DOMPurify.sanitize(html as string);
 };
 
 /**

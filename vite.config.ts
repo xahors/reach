@@ -8,4 +8,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  optimizeDeps: {
+    exclude: [
+      '@matrix-org/matrix-sdk-crypto-wasm',
+    ],
+  },
 })

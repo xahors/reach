@@ -52,42 +52,20 @@ export const UrlPreview: React.FC<UrlPreviewProps> = ({ url, children }) => {
 
     setLoading(true);
     try {
-      const ytId = getYouTubeId(url);
       let finalPreview: MatrixUrlPreview = {};
 
-      // 1. Try noembed FIRST for all links. It's a reliable OEmbed proxy
-      // which bypasses homeservers that disable URL previews (like matrix.org).
+      // Try Matrix built-in preview (Secure proxy via homeserver)
       try {
-        const fetchUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url;
-        const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(fetchUrl)}`);
-        const json = await res.json();
-        
-        // noembed returns an error string in JSON if it's unsupported
-        if (json.title && !json.error) {
-          finalPreview = {
-            'og:title': json.title,
-            'og:description': json.author_name ? `By ${json.author_name}` : json.provider_name || '',
-            'og:image': json.thumbnail_url || (ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : '')
-          };
+        const data = await client.getUrlPreview(url, Date.now());
+        if (data) {
+          finalPreview = { ...data };
         }
       } catch (e) {
-        console.warn("Noembed fallback failed:", e);
+        console.warn("Homeserver preview failed:", e);
       }
 
-      // 2. Try Matrix built-in preview for remaining metadata if noembed failed or returned generic
-      if (!finalPreview['og:title']) {
-        try {
-          const data = await client.getUrlPreview(url, Date.now());
-          if (data) {
-            finalPreview = { ...finalPreview, ...data };
-          }
-        } catch (e) {
-          // If homeserver throws 403/404, we just swallow it here and rely on final fallback
-          console.warn("Homeserver preview failed:", e);
-        }
-      }
-
-      // 3. Final sanitization/formatting for YouTube
+      // Final sanitization/formatting for YouTube
+      const ytId = getYouTubeId(url);
       if (ytId) {
         if (!finalPreview['og:title'] || finalPreview['og:title'] === 'YouTube') {
           finalPreview['og:title'] = `YouTube Video (${ytId})`;
