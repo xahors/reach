@@ -6,15 +6,16 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { 
   Users, Gamepad2, X, Trash2, Info, Bell, BellOff, 
   AtSign, Check, ShieldAlert, ShieldCheck, 
-  UserCog, Save, Loader2 
+  UserCog, Save, Loader2, LogOut 
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
-import { type RoomMember } from 'matrix-js-sdk';
+import { type RoomMember, EventType } from 'matrix-js-sdk';
 import { getRoleColor } from '../../utils/roleColors';
 
 const ChannelDetails: React.FC = () => {
   const { 
     activeRoomId, 
+    setActiveRoomId,
     setChannelDetailsOpen, 
     channelDetailsTab, 
     setChannelDetailsTab,
@@ -29,7 +30,10 @@ const ChannelDetails: React.FC = () => {
   // Room editing state
   const [roomName, setRoomName] = React.useState('');
   const [roomTopic, setRoomTopic] = React.useState('');
+  const [newAlias, setNewAlias] = React.useState('');
   const [isSavingRoom, setIsSavingRoom] = React.useState(false);
+  const [isAddingAlias, setIsAddingAlias] = React.useState(false);
+  const [isLeaving, setIsLeaving] = React.useState(false);
   const [roomSaveStatus, setRoomSaveStatus] = React.useState<{ message: string; isError: boolean } | null>(null);
 
   const activeTab = channelDetailsTab;
@@ -92,6 +96,50 @@ const ChannelDetails: React.FC = () => {
       setRoomSaveStatus({ message: `Error: ${error.message || 'Failed to update'}`, isError: true });
     } finally {
       setIsSavingRoom(false);
+    }
+  };
+
+  const handleLeaveRoom = async () => {
+    if (!client || !activeRoomId) return;
+    if (!window.confirm(`Are you sure you want to leave ${room.name || 'this room'}?`)) return;
+
+    setIsLeaving(true);
+    try {
+      await client.leave(activeRoomId);
+      setChannelDetailsOpen(false);
+      setActiveRoomId(null);
+    } catch (err) {
+      console.error("Failed to leave room:", err);
+      alert("Failed to leave room. Please try again.");
+    } finally {
+      setIsLeaving(false);
+    }
+  };
+
+  const handleAddAlias = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !activeRoomId || !newAlias.trim()) return;
+
+    setIsAddingAlias(true);
+    try {
+      const serverName = client.getUserId()?.split(':')[1];
+      const fullAlias = `#${newAlias.trim().toLowerCase()}:${serverName}`;
+      await client.createAlias(fullAlias, activeRoomId);
+      
+      // Update canonical alias if none exists
+      const currentCanonical = room?.currentState.getStateEvents(EventType.RoomCanonicalAlias, '')?.getContent()?.alias;
+      if (!currentCanonical && myPowerLevel >= 50) {
+        await client.sendStateEvent(activeRoomId, EventType.RoomCanonicalAlias as any, { alias: fullAlias }, '');
+      }
+
+      setNewAlias('');
+      setRoomSaveStatus({ message: 'Address added successfully!', isError: false });
+      setTimeout(() => setRoomSaveStatus(null), 3000);
+    } catch (err: any) {
+      console.error("Failed to add alias:", err);
+      setRoomSaveStatus({ message: `Error: ${err.message || 'Failed to add address'}`, isError: true });
+    } finally {
+      setIsAddingAlias(false);
     }
   };
 
@@ -177,6 +225,11 @@ const ChannelDetails: React.FC = () => {
       </div>
     );
   };
+
+  const allAliases = [
+    room.getCanonicalAlias(),
+    ...(room.getAltAliases() || [])
+  ].filter((a): a is string => !!a);
 
   return (
     <div className="flex h-full flex-col bg-bg-sidebar">
@@ -332,6 +385,52 @@ const ChannelDetails: React.FC = () => {
             </section>
 
             <section>
+              <h4 className="mb-3 text-[10px] font-black uppercase text-text-muted tracking-widest px-1">Local Addresses</h4>
+              <div className="rounded-xl border border-border-main bg-bg-nav/50 p-4 space-y-4 shadow-sm">
+                <div className="space-y-2">
+                  {allAliases.length === 0 ? (
+                    <p className="text-[10px] text-text-muted italic">No local addresses set for this room.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {allAliases.map((alias) => (
+                        <div key={alias} className="flex items-center justify-between bg-bg-main p-2 rounded border border-border-main group/alias">
+                          <code className="text-[10px] text-text-main font-mono truncate">{alias}</code>
+                          <Check className="h-3 w-3 text-green-500 opacity-0 group-hover/alias:opacity-100 transition-opacity" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {myPowerLevel >= 50 && (
+                  <form onSubmit={handleAddAlias} className="space-y-3 pt-2 border-t border-border-main/30">
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase mb-1 block tracking-tighter">Add New Address</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-text-muted">#</span>
+                        <input 
+                          type="text"
+                          value={newAlias}
+                          onChange={(e) => setNewAlias(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                          placeholder="new-address"
+                          className="w-full rounded bg-bg-main p-2 pl-5 text-xs text-text-main outline-none border border-border-main focus:border-accent-primary transition-all"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isAddingAlias || !newAlias.trim()}
+                      className="flex w-full items-center justify-center space-x-2 rounded-lg bg-bg-hover p-2 text-[10px] font-black uppercase tracking-widest text-text-main transition hover:bg-accent-primary hover:text-bg-main disabled:opacity-50"
+                    >
+                      {isAddingAlias ? <Loader2 className="h-3 w-3 animate-spin" /> : <AtSign className="h-3 w-3" />}
+                      <span>Add Address</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+            </section>
+
+            <section>
               <h4 className="mb-3 text-[10px] font-black uppercase text-text-muted tracking-widest px-1">Actions</h4>
               <div className="space-y-2">
                 <button 
@@ -340,6 +439,14 @@ const ChannelDetails: React.FC = () => {
                 >
                   <Trash2 className="h-4 w-4" />
                   <span className="text-xs font-black uppercase tracking-tighter">Redact My Messages</span>
+                </button>
+                <button 
+                  onClick={handleLeaveRoom}
+                  disabled={isLeaving}
+                  className="flex w-full items-center space-x-3 rounded-xl border border-transparent bg-red-500/10 p-3 text-red-400 transition hover:bg-red-500/20 shadow-sm disabled:opacity-50"
+                >
+                  {isLeaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                  <span className="text-xs font-black uppercase tracking-tighter">Leave Room</span>
                 </button>
                 <button className="flex w-full items-center space-x-3 rounded-xl border border-transparent bg-bg-nav/50 p-3 text-text-muted transition hover:bg-bg-hover hover:text-text-main shadow-sm">
                   <Info className="h-4 w-4" />

@@ -518,6 +518,92 @@ class MatrixService {
       this.tempRecoveryKey = null;
     }
   }
+
+  async createRoom(options: {
+    name: string;
+    topic?: string;
+    spaceId?: string;
+    visibility?: sdk.Visibility;
+    alias?: string;
+    isEncrypted?: boolean;
+    roomType?: 'text' | 'voice';
+    powerLevels?: {
+      events_default?: number;
+      invite?: number;
+      kick?: number;
+      ban?: number;
+      redact?: number;
+    };
+  }) {
+    if (!this.client) return null;
+    
+    const { name, topic, spaceId, visibility, alias, isEncrypted, roomType, powerLevels } = options;
+    const serverName = this.client.getUserId()?.split(':')[1] || '';
+    
+    const createOpts: sdk.ICreateRoomOpts = {
+      name,
+      topic,
+      visibility: visibility || sdk.Visibility.Private,
+      preset: visibility === sdk.Visibility.Public ? sdk.Preset.PublicChat : sdk.Preset.PrivateChat,
+      room_alias_name: alias,
+      initial_state: [],
+    };
+
+    if (roomType === 'voice') {
+      createOpts.creation_content = {
+        type: 'org.matrix.msc3401.room.voice'
+      };
+    }
+
+    if (isEncrypted !== false && roomType !== 'voice') {
+      createOpts.initial_state?.push({
+        type: 'm.room.encryption',
+        state_key: '',
+        content: {
+          algorithm: 'm.megolm.v1.aes-sha2',
+        },
+      });
+    }
+
+    if (spaceId) {
+      createOpts.initial_state?.push({
+        type: 'm.room.parent',
+        state_key: spaceId,
+        content: {
+          via: [serverName],
+          canonical: true,
+        }
+      });
+    }
+
+    if (powerLevels) {
+      createOpts.power_level_content_override = powerLevels;
+    }
+    
+    const result = await this.client.createRoom(createOpts);
+    
+    if (spaceId && result.room_id) {
+      await this.client.sendStateEvent(spaceId, sdk.EventType.SpaceChild as any, {
+        via: [serverName],
+      }, result.room_id);
+    }
+    
+    return result;
+  }
+
+  async createSpace(name: string, topic?: string) {
+    if (!this.client) return null;
+    const result = await this.client.createRoom({
+      name,
+      topic,
+      creation_content: {
+        type: 'm.space',
+      },
+      visibility: sdk.Visibility.Private,
+      preset: sdk.Preset.PrivateChat,
+    });
+    return result;
+  }
 }
 
 export const matrixService = new MatrixService();

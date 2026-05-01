@@ -40,7 +40,7 @@ export const useSpaceRooms = (spaceId: string | null) => {
 
       const spaceRooms = childRoomIds
         .map((id) => id ? client.getRoom(id!) : null)
-        .filter((room): room is Room => room !== null);
+        .filter((room): room is Room => room !== null && room.getMyMembership() === 'join');
 
       setTimeout(() => {
         setRooms(spaceRooms);
@@ -67,13 +67,23 @@ export const useSpaceRooms = (spaceId: string | null) => {
       updateRooms();
     }, 0);
 
+    const onSync = (state: string) => {
+      if (state === 'PREPARED' || state === 'SYNCING') {
+        updateRooms();
+      }
+    };
+
     client.on(RoomStateEvent.Events, updateRooms);
     client.on(RoomEvent.MyMembership, updateRooms);
+    // @ts-expect-error - Matrix SDK event type mismatch
+    client.on('sync', onSync);
 
     return () => {
       clearTimeout(initialLoadTimeout);
       client.removeListener(RoomStateEvent.Events, updateRooms);
       client.removeListener(RoomEvent.MyMembership, updateRooms);
+      // @ts-expect-error - Matrix SDK event type mismatch
+      client.removeListener('sync', onSync);
     };
   }, [client, spaceId, updateRooms]);
 

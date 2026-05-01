@@ -13,6 +13,8 @@ import ActiveCall from './components/calls/ActiveCall';
 import SettingsModal from './components/ui/SettingsModal';
 import ThemeManager from './components/ui/ThemeManager';
 import { ExploreModal } from './components/ui/ExploreModal';
+import { CreateModal } from './components/ui/CreateModal';
+import { ChannelExplorer } from './components/ui/ChannelExplorer';
 import MediaLightbox from './components/ui/MediaLightbox';
 import UserContextMenu from './components/ui/UserContextMenu';
 import UserProfileModal from './components/ui/UserProfileModal';
@@ -98,6 +100,8 @@ function MainApp() {
       {callWindowingMode !== 'integrated' && <ActiveCall />}
       <SettingsModal />
       <ExploreModal />
+      <CreateModal />
+      <ChannelExplorer />
       <MediaLightbox />
       <UserContextMenu />
       <UserProfileModal />

@@ -7,7 +7,7 @@ import { cn } from '../../utils/cn';
 import { MessageSquare, Plus } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
-  const { activeSpaceId, setActiveSpaceId, setExploreOpen } = useAppStore();
+  const { activeSpaceId, setActiveSpaceId, setCreateModalOpen } = useAppStore();
   const { spaces, loading } = useSpaces();
   const client = useMatrixClient();
 
@@ -137,7 +137,7 @@ const Sidebar: React.FC = () => {
 
       {/* Add Space */}
       <button 
-        onClick={() => setExploreOpen(true)}
+        onClick={() => setCreateModalOpen(true, 'space')}
         className="group relative flex h-12 w-12 mt-2 items-center justify-center rounded-[24px] bg-bg-hover text-green-500 transition-all duration-200 hover:rounded-[16px] hover:bg-green-500 hover:text-white"
       >
         <Plus className="h-7 w-7" />

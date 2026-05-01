@@ -193,6 +193,9 @@ interface AppState {
   highlightedEventId: string | null;
   userProfileId: string | null;
   userContextMenu: { userId: string, roomId: string, x: number, y: number } | null;
+  isCreateModalOpen: boolean;
+  createModalType: 'room' | 'space';
+  isChannelExplorerOpen: boolean;
   setLoggedIn: (isLoggedIn: boolean, userId: string | null) => void;
   setSynced: (isSynced: boolean) => void;
   setActiveSpaceId: (id: string | null) => void;
@@ -203,6 +206,8 @@ interface AppState {
   setIncomingCall: (call: MatrixCall | null) => void;
   setSettingsOpen: (isOpen: boolean, tab?: AppState['activeSettingsTab']) => void;
   setExploreOpen: (isOpen: boolean) => void;
+  setChannelExplorerOpen: (isOpen: boolean) => void;
+  setCreateModalOpen: (isOpen: boolean, type?: 'room' | 'space') => void;
   setChannelDetailsOpen: (isOpen: boolean, tab?: AppState['channelDetailsTab']) => void;
   setChannelDetailsTab: (tab: AppState['channelDetailsTab']) => void;
   setThreadOpen: (isOpen: boolean, threadId?: string | null) => void;
@@ -251,6 +256,7 @@ export const useAppStore = create<AppState>()(
       incomingCall: null,
       isSettingsOpen: false,
       isExploreOpen: false,
+      isChannelExplorerOpen: false,
       activeSettingsTab: 'account',
       isChannelDetailsOpen: false,
       channelDetailsTab: 'members',
@@ -294,6 +300,8 @@ export const useAppStore = create<AppState>()(
       highlightedEventId: null,
       userProfileId: null,
       userContextMenu: null,
+      isCreateModalOpen: false,
+      createModalType: 'room',
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
@@ -337,6 +345,11 @@ export const useAppStore = create<AppState>()(
         activeSettingsTab: tab || state.activeSettingsTab
       })),
       setExploreOpen: (isOpen) => set({ isExploreOpen: isOpen }),
+      setChannelExplorerOpen: (isOpen) => set({ isChannelExplorerOpen: isOpen }),
+      setCreateModalOpen: (isOpen, type) => set((state) => ({
+        isCreateModalOpen: isOpen,
+        createModalType: type || state.createModalType
+      })),
       setChannelDetailsOpen: (isOpen, tab) => set((state) => ({ 
         isChannelDetailsOpen: isOpen,
         channelDetailsTab: tab || state.channelDetailsTab,

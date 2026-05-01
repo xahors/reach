@@ -7,7 +7,7 @@ import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { cn } from '../../utils/cn';
 import { 
   ChevronDown, Settings, Gamepad2, 
-  MoreVertical, FolderPlus, Trash2, Check, X 
+  MoreVertical, FolderPlus, Trash2, Check, X, Plus, Hash 
 } from 'lucide-react';
 import { callManager } from '../../core/callManager';
 import { useGamePresence } from '../../hooks/useGamePresence';
@@ -20,6 +20,8 @@ const ChannelList: React.FC = () => {
     activeRoomId, 
     setActiveRoomId,
     setSettingsOpen, 
+    setCreateModalOpen,
+    setChannelExplorerOpen,
     detectedGame,
     customGameNames,
     userPresence,
@@ -75,11 +77,10 @@ const ChannelList: React.FC = () => {
 
     if (activeSpaceId) {
       // SPACE MODE
-      if (rooms.length > 0) {
-        // Check if current active room is in the current space
-        const currentRoomInSpace = rooms.some(r => r.roomId === activeRoomId);
+      const currentRoomInSpace = rooms.some(r => r.roomId === activeRoomId);
 
-        if (spaceChanged || !activeRoomId || !currentRoomInSpace) {
+      if (spaceChanged || !activeRoomId || !currentRoomInSpace) {
+        if (rooms.length > 0) {
           // If we changed spaces, or have no room, or current room isn't in this space
           let targetRoomId = lastRoomId;
 
@@ -94,14 +95,20 @@ const ChannelList: React.FC = () => {
             }, 0);
             return () => clearTimeout(timer);
           }
+        } else if (activeRoomId) {
+          // Space is empty, clear active room
+          const timer = setTimeout(() => {
+            if (isMounted.current) setActiveRoomId?.(null);
+          }, 0);
+          return () => clearTimeout(timer);
         }
       }
     } else {
       // HOME / DM MODE
-      if (dms.length > 0) {
-        const currentRoomInDms = dms.some(d => d.room.roomId === activeRoomId);
+      const currentRoomInDms = dms.some(d => d.room.roomId === activeRoomId);
 
-        if (spaceChanged || !activeRoomId || !currentRoomInDms) {
+      if (spaceChanged || !activeRoomId || !currentRoomInDms) {
+        if (dms.length > 0) {
           let targetRoomId = lastRoomId;
 
           if (!targetRoomId || !dms.some(d => d.room.roomId === targetRoomId)) {
@@ -114,6 +121,12 @@ const ChannelList: React.FC = () => {
             }, 0);
             return () => clearTimeout(timer);
           }
+        } else if (activeRoomId) {
+          // DMs are empty, clear active room
+          const timer = setTimeout(() => {
+            if (isMounted.current) setActiveRoomId?.(null);
+          }, 0);
+          return () => clearTimeout(timer);
         }
       }
     }
@@ -129,11 +142,20 @@ const ChannelList: React.FC = () => {
     // Run this in the background to avoid blocking the UI thread
     const room = client?.getRoom(roomId);
     if (room) {
-      const groupCall = client?.getGroupCallForRoom(roomId);
-      if (groupCall) {
-        callManager.joinVoiceChannel(roomId).catch(err => {
-           console.error("Failed to auto-join voice channel:", err);
+      const roomType = room.currentState.getStateEvents('m.room.create', '')?.getContent()?.type;
+      const isVoiceRoom = roomType === 'org.matrix.msc3401.room.voice';
+      
+      if (isVoiceRoom) {
+        callManager.enterGroupCall(roomId, 'voice').catch(err => {
+          console.error("Failed to enter voice channel:", err);
         });
+      } else {
+        const groupCall = client?.getGroupCallForRoom(roomId);
+        if (groupCall) {
+          callManager.joinVoiceChannel(roomId).catch(err => {
+             console.error("Failed to auto-join voice channel:", err);
+          });
+        }
       }
     }
   };
@@ -307,6 +329,17 @@ const ChannelList: React.FC = () => {
 
     return (
       <div className="flex-1 overflow-y-auto pt-2 no-scrollbar">
+        {/* Browse Channels Button */}
+        <div className="px-2 mb-4">
+          <button
+            onClick={() => setChannelExplorerOpen(true)}
+            className="flex w-full items-center space-x-2 px-2 py-1.5 rounded text-sm font-bold text-text-muted hover:bg-bg-hover hover:text-white transition"
+          >
+            <Hash className="h-4 w-4" />
+            <span>Browse Channels</span>
+          </button>
+        </div>
+
         {currentSpaceSections.map(section => {
           const isOver = dragOverSection === section;
           return (
@@ -325,6 +358,15 @@ const ChannelList: React.FC = () => {
                   <span>{section}</span>
                 </div>
                 <div className="flex items-center space-x-1 opacity-0 group-hover/header:opacity-100 transition">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCreateModalOpen(true, 'room');
+                    }}
+                    className="p-0.5 hover:text-text-main transition"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
                   {section !== 'Channels' && activeSpaceId && (
                     <button onClick={() => removeSection(activeSpaceId, section)} className="p-0.5 hover:text-red-400 transition">
                       <Trash2 className="h-3 w-3" />
@@ -476,8 +518,14 @@ const ChannelList: React.FC = () => {
 
       {activeSpaceId ? renderSections() : (
         <div className="flex-1 overflow-y-auto pt-4 no-scrollbar px-2">
-          <div className="px-2 mb-2">
+          <div className="flex items-center justify-between px-2 mb-2 group/header">
             <span className="text-[10px] font-bold uppercase text-text-muted tracking-wider">Direct Messages</span>
+            <button 
+              onClick={() => setCreateModalOpen(true, 'room')}
+              className="p-0.5 text-text-muted opacity-0 group-hover/header:opacity-100 hover:text-text-main transition"
+            >
+              <Plus className="h-3 w-3" />
+            </button>
           </div>
           <div className="space-y-[2px]">
             {dmsLoading ? (

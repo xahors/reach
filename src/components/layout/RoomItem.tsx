@@ -57,21 +57,23 @@ const RoomItem: React.FC<RoomItemProps> = React.memo(({ room, isActive, onClick,
       client.removeListener(ClientEvent.Sync, onUpdate);
       room.removeListener(RoomEvent.Receipt, onUpdate);
       room.removeListener(RoomEvent.Timeline, onUpdate);
-    };
-  }, [client, room, updateCounts]);
+    }
+    }, [client, room, updateCounts]);
 
-  const getStatusColor = (p: string) => {
+    const getStatusColor = (p: string) => {
     switch (p) {
       case 'online': return 'bg-green-500';
       case 'unavailable': return 'bg-yellow-500';
       case 'offline': return 'bg-gray-500';
       default: return 'bg-gray-500/50';
     }
-  };
+    };
 
-  const Icon = isCallActive ? Volume2 : Hash;
+    const roomType = room.currentState.getStateEvents('m.room.create', '')?.getContent()?.type;
+    const isVoiceRoom = roomType === 'org.matrix.msc3401.room.voice';
+    const Icon = isVoiceRoom || isCallActive ? Volume2 : Hash;
 
-  const mxcToUrl = (mxc: string | null) => {
+    const mxcToUrl = (mxc: string | null) => {
     if (!mxc || !client) return null;
     return client.mxcUrlToHttp(mxc, 40, 40, 'crop');
   };
