@@ -172,6 +172,7 @@ interface AppState {
   customStatus: string | null;
   roomSections: Record<string, string>; // roomId -> sectionName
   roomSectionOrder: Record<string, string[]>; // spaceId -> list of section names
+  lastRoomPerSpace: Record<string, string>; // spaceId (or 'home') -> roomId
   themeConfig: ThemeConfig;
   showUrlPreviews: boolean;
   sendReadReceipts: boolean;
@@ -273,6 +274,7 @@ export const useAppStore = create<AppState>()(
       customStatus: null,
       roomSections: {},
       roomSectionOrder: {},
+      lastRoomPerSpace: {},
       themeConfig: {
         activePreset: 'classic',
         colors: THEME_PRESETS.classic,
@@ -295,12 +297,21 @@ export const useAppStore = create<AppState>()(
       setLoggedIn: (isLoggedIn, userId) => set({ isLoggedIn, userId }),
       setSynced: (isSynced) => set({ isSynced }),
       setActiveSpaceId: (id) => set({ activeSpaceId: id }),
-      setActiveRoomId: (id) => set((state) => ({ 
-        activeRoomId: id,
-        // Close thread when changing rooms
-        isThreadOpen: state.activeRoomId !== id ? false : state.isThreadOpen,
-        activeThreadId: state.activeRoomId !== id ? null : state.activeThreadId
-      })),
+      setActiveRoomId: (id) => set((state) => {
+        const spaceId = state.activeSpaceId || 'home';
+        const newLastRoomPerSpace = { ...state.lastRoomPerSpace };
+        if (id) {
+          newLastRoomPerSpace[spaceId] = id;
+        }
+
+        return { 
+          activeRoomId: id,
+          lastRoomPerSpace: newLastRoomPerSpace,
+          // Close thread when changing rooms
+          isThreadOpen: state.activeRoomId !== id ? false : state.isThreadOpen,
+          activeThreadId: state.activeRoomId !== id ? null : state.activeThreadId
+        };
+      }),
       setActiveCall: (call) => set((state) => ({ 
         activeCall: call, 
         isCallMinimized: false, 
@@ -418,6 +429,7 @@ export const useAppStore = create<AppState>()(
         customStatus: state.customStatus,
         roomSections: state.roomSections,
         roomSectionOrder: state.roomSectionOrder,
+        lastRoomPerSpace: state.lastRoomPerSpace,
         themeConfig: state.themeConfig,
         showUrlPreviews: state.showUrlPreviews,
         sendReadReceipts: state.sendReadReceipts,

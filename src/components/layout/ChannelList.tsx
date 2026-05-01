@@ -28,13 +28,14 @@ const ChannelList: React.FC = () => {
     setCustomStatus,
     roomSections,
     roomSectionOrder,
+    lastRoomPerSpace,
     setRoomSection,
     addSection,
     removeSection,
     roomNotificationSettings,
     setRoomNotificationSetting
   } = useAppStore();
-  const { rooms } = useSpaceRooms(activeSpaceId);
+  const { rooms, loading: spaceRoomsLoading } = useSpaceRooms(activeSpaceId);
   const { dms, loading: dmsLoading } = useDirectMessages();
   const client = useMatrixClient();
   
@@ -66,36 +67,59 @@ const ChannelList: React.FC = () => {
 
   // Effect to handle space switching and initial room selection
   React.useEffect(() => {
-    if (!isMounted.current) return;
+    if (!isMounted.current || spaceRoomsLoading || dmsLoading) return;
 
-    // We only want to auto-select a room if:
-    // 1. A space is active
-    // 2. We have rooms in that space
-    // 3. EITHER we just switched to this space OR no room is currently selected
-    if (activeSpaceId && rooms.length > 0) {
-      const spaceChanged = lastSelectedSpace.current !== activeSpaceId;
-      
-      if (spaceChanged || !activeRoomId) {
-        // If the space changed, or we have no active room, select the first one
-        // Use a timeout to avoid setState in render/effect conflict
-        const firstRoomId = rooms[0].roomId;
-        if (firstRoomId !== activeRoomId) {
-          const timer = setTimeout(() => {
-            if (isMounted.current) {
-              try {
-                setActiveRoomId?.(firstRoomId);
-              } catch (e) {
-                console.error("Failed to auto-select room:", e);
-              }
-            }
-          }, 0);
-          return () => clearTimeout(timer);
+    const spaceId = activeSpaceId || 'home';
+    const lastRoomId = lastRoomPerSpace[spaceId];
+    const spaceChanged = lastSelectedSpace.current !== activeSpaceId;
+
+    if (activeSpaceId) {
+      // SPACE MODE
+      if (rooms.length > 0) {
+        // Check if current active room is in the current space
+        const currentRoomInSpace = rooms.some(r => r.roomId === activeRoomId);
+
+        if (spaceChanged || !activeRoomId || !currentRoomInSpace) {
+          // If we changed spaces, or have no room, or current room isn't in this space
+          let targetRoomId = lastRoomId;
+
+          // Verify lastRoomId actually belongs to this space
+          if (!targetRoomId || !rooms.some(r => r.roomId === targetRoomId)) {
+            targetRoomId = rooms[0].roomId;
+          }
+
+          if (targetRoomId !== activeRoomId) {
+            const timer = setTimeout(() => {
+              if (isMounted.current) setActiveRoomId?.(targetRoomId);
+            }, 0);
+            return () => clearTimeout(timer);
+          }
+        }
+      }
+    } else {
+      // HOME / DM MODE
+      if (dms.length > 0) {
+        const currentRoomInDms = dms.some(d => d.room.roomId === activeRoomId);
+
+        if (spaceChanged || !activeRoomId || !currentRoomInDms) {
+          let targetRoomId = lastRoomId;
+
+          if (!targetRoomId || !dms.some(d => d.room.roomId === targetRoomId)) {
+            targetRoomId = dms[0].room.roomId;
+          }
+
+          if (targetRoomId !== activeRoomId) {
+            const timer = setTimeout(() => {
+              if (isMounted.current) setActiveRoomId?.(targetRoomId);
+            }, 0);
+            return () => clearTimeout(timer);
+          }
         }
       }
     }
     
     lastSelectedSpace.current = activeSpaceId;
-  }, [activeSpaceId, rooms, activeRoomId, setActiveRoomId]);
+  }, [activeSpaceId, rooms, dms, activeRoomId, setActiveRoomId, lastRoomPerSpace, spaceRoomsLoading]);
 
   const handleRoomClick = (roomId: string) => {
     callManager.warmupAudioContext();
